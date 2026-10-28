@@ -206,6 +206,33 @@ class PGELedger:
         if kind == 'deposit_added': return money(sum(x['deposit_added'] for x in settlements.values()))
         return None
 
+    def attributes(self, kind):
+        """Extra data for the dashboard: per-month settlement, tariff, today's RCE."""
+        s = self.settings
+        if kind == 'invoice_forecast':
+            vat = float(s['vat'])
+            local = dt_util.now().astimezone(WARSAW)
+            z = zone(local)
+            variable = sum(float(s[k]) for k in ('quality', 'cogen', 'oze'))
+            price = {k: money((float(s[f'buy_{k}']) + float(s[f'distribution_{k}']) + variable) * (1 + vat)) for k in ('s1', 's2')}
+            return {
+                'months': self._settlements(),
+                'tariff': {'name': 'G12', 'zone': z, 'price_gross': price, 'vat': vat},
+            }
+        if kind == 'rce_current':
+            local = dt_util.now().astimezone(WARSAW)
+            start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+            end = start + timedelta(days=1)
+            rows = []
+            for slot, price in sorted(self.data['prices'].items()):
+                t = datetime.fromisoformat(slot).astimezone(WARSAW)
+                if start <= t < end:
+                    rows.append([slot, round(price, 5)])
+            now = dt_util.utcnow()
+            current = now.replace(minute=now.minute//15*15, second=0, microsecond=0).isoformat()
+            return {'slot': current, 'today': rows}
+        return {}
+
     async def async_shutdown(self):
         for fn in self.unsubs: fn()
         await self.store.async_save(self.data)
