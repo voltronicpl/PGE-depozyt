@@ -12,6 +12,7 @@ PANEL_URL = "/pge_net_billing_static/pge-net-billing.js"
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Serve the custom Lovelace card; add resource in dashboard resources if needed."""
     hass.http.register_static_path("/pge_net_billing_static", str(Path(__file__).parent / "frontend"), cache_headers=False)
+    frontend.add_extra_js_url(hass, PANEL_URL)
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
