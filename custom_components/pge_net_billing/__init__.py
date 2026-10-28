@@ -3,6 +3,7 @@ from pathlib import Path
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.components import frontend, panel_custom
+from homeassistant.components.http import StaticPathConfig
 from .const import DOMAIN
 from .coordinator import PGELedger
 
@@ -11,7 +12,7 @@ PANEL_URL = "/pge_net_billing_static/pge-net-billing.js"
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Serve the custom Lovelace card; add resource in dashboard resources if needed."""
-    hass.http.register_static_path("/pge_net_billing_static", str(Path(__file__).parent / "frontend"), cache_headers=False)
+    await hass.http.async_register_static_paths([StaticPathConfig("/pge_net_billing_static", str(Path(__file__).parent / "frontend"), False)])
     frontend.add_extra_js_url(hass, PANEL_URL)
     return True
 
