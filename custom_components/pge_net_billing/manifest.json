@@ -1,7 +1,7 @@
 {
   "domain": "pge_net_billing",
   "name": "PGE Net-Billing (prognozy)",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "documentation": "https://github.com/voltronicpl/PGE-depozyt",
   "requirements": [],
   "dependencies": ["frontend", "http"],
