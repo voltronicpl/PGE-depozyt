@@ -1,7 +1,7 @@
 /* PGE Net-Billing v1.2.2 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.2.2";
+const VERSION = "1.2.3";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -186,7 +186,7 @@ function delta(cur, prev, upIsBad, plus = true) {
 }
 function logo(config, size = "lg") {
   if (config?.logo) return `<img class="logo logo-${size}" src="${esc(config.logo)}" alt="">`;
-  return `<span class="logo logo-${size} logo-badge"><ha-icon icon="mdi:transmission-tower"></ha-icon></span>`;
+  return `<img class="logo logo-${size}" src="/pge_net_billing_static/pge-logo.svg?v=${VERSION}" alt="PGE">`;
 }
 function flowChart(flow) {
   const W = 680, H = 178, L = 34, R = 8, T = 20, B = 22;
