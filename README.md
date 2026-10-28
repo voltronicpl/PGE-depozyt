@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.1.0
+# PGE Net-Billing v1.2.2
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
