@@ -10,7 +10,21 @@ const css=`
 .panel .metrics{margin-bottom:13px}.section{padding:19px;margin-bottom:13px}.section h3{margin:0 0 15px;font-size:16px}.details{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.detail{padding:16px;min-height:104px}.detail .num{font-size:23px}.chart{height:200px;width:100%}.note{font-size:11px;color:#8eacbf;line-height:1.6}.link{cursor:pointer}.link:hover{border-color:#3b9ae9}
 .dashboard{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(260px,.85fr);gap:13px}.dashboard-left,.dashboard-right{min-width:0}.dashboard-right{display:grid;grid-template-rows:repeat(3,1fr);gap:12px;margin-bottom:13px}.sidecard{padding:19px;display:flex;flex-direction:column;justify-content:center}.sidecard .num{font-size:26px}.sidecard .mini{margin-top:5px}.top-metrics .metric{min-height:207px}.top-metrics .kicker{display:flex;gap:9px;align-items:center}.glyph{font-size:21px;display:inline-flex;width:42px;height:42px;border-radius:12px;align-items:center;justify-content:center;background:#173d50}.legend{display:flex;gap:14px;justify-content:flex-end;color:#9bbbd0;font-size:12px}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;background:var(--pge-orange)}.dot.green-dot{background:var(--pge-green)}.bottom-tables{display:grid;grid-template-columns:1fr 1fr;gap:12px}.table-head,.table-line{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:8px;padding:9px 0;border-bottom:1px solid #193649;font-size:12px}.table-head{color:#8fb0c5}.table-line strong{text-align:right}.table-line span:not(:first-child){text-align:right}.compact-title{font-size:16px;font-weight:750;margin:0 0 13px}
 .pge-card .metric{min-height:105px;padding:13px}.pge-card .num{font-size:clamp(17px,2vw,25px)}.pge-card .mini{height:23px;margin-top:4px}.pge-card .heading{margin-bottom:10px}.pge-card .brand{font-size:16px}.pge-card .metrics{gap:8px}
-@media(max-width:1100px){.dashboard{grid-template-columns:1fr}.dashboard-right{grid-template-columns:repeat(3,1fr);grid-template-rows:auto}.details{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.panel{padding:12px}.metrics{grid-template-columns:1fr}.dashboard-right{grid-template-columns:1fr}.bottom-tables{grid-template-columns:1fr}.metric{min-height:135px}.details{grid-template-columns:1fr 1fr}.pge-card .metrics{grid-template-columns:1fr}.heading{align-items:flex-start}.pill{display:none}}`;
+@media(max-width:1100px){.dashboard{grid-template-columns:1fr}.dashboard-right{grid-template-columns:repeat(3,1fr);grid-template-rows:auto}.details{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.panel{padding:12px}.metrics{grid-template-columns:1fr}.dashboard-right{grid-template-columns:1fr}.bottom-tables{grid-template-columns:1fr}.metric{min-height:135px}.details{grid-template-columns:1fr 1fr}.pge-card .metrics{grid-template-columns:1fr}.heading{align-items:flex-start}.pill{display:none}}
+/* Compact Lovelace card: one row of three metrics at any dashboard width */
+.pge-card{padding:15px 16px;background:linear-gradient(135deg,#0a1b2a,#0c2637);border-radius:17px;width:100%;overflow:hidden;box-shadow:none}
+.pge-card .heading{margin-bottom:13px;align-items:center}
+.pge-card .brand{font-size:16px;letter-spacing:0}
+.pge-card .sub{font-size:11px;margin-top:3px}
+.pge-card .metrics{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:0!important}
+.pge-card .metric{background:transparent;border:0;border-right:1px solid #244255;border-radius:0;min-height:94px;padding:7px 12px 4px;overflow:hidden}
+.pge-card .metric:first-child{padding-left:2px}.pge-card .metric:last-child{border-right:0;padding-right:2px}
+.pge-card .kicker{font-size:clamp(9px,1.4vw,11px);line-height:1.3;min-height:29px;color:#b2c9d8;white-space:normal}
+.pge-card .num{font-size:clamp(13px,2.5vw,24px);letter-spacing:-.4px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:clip}
+.pge-card .mini{height:24px;margin-top:7px;display:block}
+.pge-card .pill{display:inline;color:#93b4c8;white-space:nowrap;font-size:10px}
+@media(max-width:700px){.pge-card .metrics{grid-template-columns:repeat(3,minmax(0,1fr))!important}.pge-card .metric{min-height:85px;padding:5px 8px}.pge-card .num{font-size:clamp(12px,3.2vw,18px)}.pge-card .kicker{font-size:10px}.pge-card .pill{display:none}}
+`;
 function esc(v){return String(v??"—").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function fmt(v,unit){const n=Number(v);return v!==null&&v!==undefined&&v!==""&&Number.isFinite(n)?new Intl.NumberFormat("pl-PL",{minimumFractionDigits:2,maximumFractionDigits:2}).format(n)+" "+unit:"—";}
 function color(v){return Number(v)>=0?"green":"red";}
@@ -34,8 +48,17 @@ class PGEBase extends HTMLElement{
 }
 class PGECompactCard extends PGEBase{
  static getStubConfig(){return {type:"custom:pge-net-billing-card"};}
- getCardSize(){return 3;}
- draw(){if(!this.shadowRoot)return;this.shadowRoot.innerHTML=`<style>${css}</style><div class="wrap pge-card link" role="link" tabindex="0"><div class="heading"><div><div class="brand">⚡ PGE Net-Billing</div><div class="sub">Rachunek · Depozyt · Bilans</div></div><span class="pill">Otwórz panel ❯</span></div>${this.summary()}</div>`;const el=this.shadowRoot.querySelector(".link");const go=()=>{window.location.pathname="/pge-net-billing";};el.addEventListener("click",go);el.addEventListener("keydown",e=>{if(e.key==="Enter")go();});}
+ getCardSize(){return 2;}
+ draw(){
+  if(!this.shadowRoot)return;
+  const inv=this.val("invoice_forecast"),dep=this.val("deposit_estimate"),bal=this.balance();
+  const metric=(label,v,unit,cls,trend)=>`<div class="metric"><div class="kicker">${esc(label)}</div><div class="num ${cls}">${esc(fmt(v,unit))}</div>${this.trend(trend,cls==="orange"?"#ffac35":cls==="green"?"#2ee39b":"#ff6570")}</div>`;
+  this.shadowRoot.innerHTML=`<style>${css}</style><div class="wrap pge-card link" role="link" tabindex="0" aria-label="Otwórz PGE Net-Billing"><div class="heading"><div><div class="brand">⚡ PGE Net-Billing</div><div class="sub">Rachunek · Depozyt · Bilans</div></div><span class="pill">Szczegóły ›</span></div><div class="metrics">${metric("▤ Rachunek",inv,"zł","orange","invoice_forecast")}${metric("▣ Depozyt",dep,"zł","green","deposit_estimate")}${metric("♻ Bilans energii",bal,"kWh",color(bal),"export_kwh")}</div></div>`;
+  const el=this.shadowRoot.querySelector(".link");
+  const go=()=>{window.location.pathname="/pge-net-billing";};
+  el.addEventListener("click",go);
+  el.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}});
+ }
 }
 class PGEPanel extends PGEBase{
  draw(){
