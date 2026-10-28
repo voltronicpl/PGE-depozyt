@@ -1,0 +1,10 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "PGE Net-Billing estimate",
+        "description": "Choose cumulative kWh sensors. Prices are net PLN. RCE is a manual placeholder, not PSE live data."
+      }
+    }
+  }
+}
