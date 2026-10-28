@@ -4,11 +4,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
-from .const import DOMAIN
+from .const import DOMAIN, VERSION
 from .coordinator import PGELedger
 
 PLATFORMS = ["sensor"]
-PANEL_URL = "/pge_net_billing_static/pge-net-billing.js"
+# ?v= busts the browser cache on every release (static path is served without cache headers,
+# so browsers kept the old v1.0.x file and showed the old panel)
+PANEL_URL = f"/pge_net_billing_static/pge-net-billing.js?v={VERSION}"
+# New element name: an old copy of the script (cache / leftover Lovelace resource) that already
+# defined "pge-net-billing-panel" can no longer hijack the panel.
+PANEL_ELEMENT = "pge-net-billing-dashboard"
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Serve the custom Lovelace card; add resource in dashboard resources if needed."""
@@ -24,7 +29,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.data[DOMAIN].get("_panel_registered"):
         await panel_custom.async_register_panel(
             hass,
-            webcomponent_name="pge-net-billing-panel",
+            webcomponent_name=PANEL_ELEMENT,
             frontend_url_path="pge-net-billing",
             module_url=PANEL_URL,
             sidebar_title="PGE Net-Billing",
