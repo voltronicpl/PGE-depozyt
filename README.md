@@ -1,28 +1,27 @@
-# PGE Net-Billing — 1.0.0-beta.1
+# PGE Net-Billing v1.0.0
 
-**Wersja eksperymentalna: nie jest oficjalnym rozliczeniem PGE.**
+Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
 ## Instalacja
-Skopiuj `custom_components/pge_net_billing` do katalogu `/config/custom_components/`, zrestartuj Home Assistant, dodaj integrację przez Ustawienia → Urządzenia i usługi. Encje importu/eksportu można pozostawić puste i ustawić później w opcjach. Nie wymaga YAML.
+Skopiuj `custom_components/pge_net_billing` do `/config/custom_components/`, uruchom ponownie HA i skonfiguruj integrację przez Ustawienia → Urządzenia i usługi.
 
-## Co robi
-- Odczytuje narastające liczniki energii importowanej i eksportowanej w kWh lub Wh.
-- Rozlicza strefy G12 i opłaty netto według stawek wprowadzonych przez UI (domyślne pochodzą z faktury kwiecień/maj 2026; **niepotwierdzone dla listopada 2026**).
-- Pobiera RCE z publicznego API PSE, jeśli dostępne są znaczniki UTC i ceny, i wycenia eksport w przedziałach 15-minutowych.
-- Prowadzi miesięczne prognozy depozytu z FIFO, wykorzystaniem w kolejnych miesiącach i wygasaniem po 12 miesiącach.
-- Wyświetla prognozę faktury bieżącego miesiąca, z pełną miesięczną opłatą stałą.
-- Zapisuje lokalnie historię, odczyty i ceny w Home Assistant Store.
+## Nowe w v1.0.0
+- Panel boczny **PGE Net-Billing** pod `/pge-net-billing`, automatycznie rejestrowany po załadowaniu integracji.
+- Karta Lovelace **PGE Net-Billing – kafelek**: rachunek, depozyt i bilans kWh w trzech kolumnach.
+- Wspólny ciemny wygląd, gradienty, wykresy historii z HA Recorder i pasek bilansu.
+- Dane z encji integracji; bez wymyślonych kwot.
 
-## WAŻNE ograniczenia
-- **Nie jest to wersja produkcyjna ani zweryfikowana na żywym Home Assistant.** Nie przeprowadzono testu end-to-end z PSE ani fakturą prosumencką.
-- Prognoza depozytu nie implementuje jeszcze ustawowego limitu zwrotu niewykorzystanych środków, szczegółowych korekt PGE ani rozliczenia z rzeczywistym kontem klienta.
-- Wartości ujemne RCE są tymczasowo obcinane do zera; należy potwierdzić sposób ich rozliczenia u sprzedawcy.
-- Dane pochodzące z falownika mogą się różnić od licznika OSD (bilansowanie międzyfazowe).
-- Zmiana stawek nie przelicza poprawnie historycznych miesięcy. Opłaty stałe liczone są za pełny miesiąc (nie proporcjonalnie do dni). Nie ma kalendarza wersjonowania taryf.
-- Zdarzenia licznika przecinające granicę 15 minut, strefy taryfowej lub miesiąca są oznaczane jako niekompletne; nie rozdzielamy energii na oko.
-- Długie luki w pomiarach nie są wyceniane. Bez źródłowych danych 15-minutowych nie można zagwarantować rozliczenia z dokładnością do grosza.
-- Przy zmianie źródła licznika należy zresetować punkt odniesienia; nie jest to jeszcze zautomatyzowane.
-- Saldo 0 PLN oznacza przyjęty stan początkowy, nie stan potwierdzony w PGE.
+### Dodanie małego kafelka
+W Ustawienia → Pulpity → Zasoby dodaj zasób JavaScript (moduł):
+`/pge_net_billing_static/pge-net-billing.js`
 
-## Plan następnej iteracji
-Test integracyjny na Home Assistant, zweryfikowanie rzeczywistego formatu API PSE, obsługa kwartalnych/miesięcznych korekt, wersjonowane stawki i uzgodnienie salda z fakturą prosumencką.
+Następnie w edytorze dashboardu dodaj kartę ręczną:
+
+```yaml
+type: custom:pge-net-billing-card
+```
+
+Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Ograniczenia
+To nadal **prognozy, nie oficjalna faktura**. Stawki są historyczne i niezweryfikowane dla listopada 2026. Bilans kWh to różnica eksportu i importu z okresu działania integracji, nie stan magazynu energii. Saldo depozytu nie jest saldem rachunku bankowego. Wykresy korzystają z Recorder i mogą być puste. Karta i panel nie były jeszcze testowane end-to-end na rzeczywistej instalacji HA. Rozliczenia i ograniczenia beta pozostają bez zmian.
