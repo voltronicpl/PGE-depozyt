@@ -1,0 +1,57 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "PGE Net-Billing — konfiguracja",
+        "description": "Wskaż liczniki narastające kWh. Wszystkie ceny netto, PLN. Cena RCE jest tymczasową wartością ręczną, a nie automatycznym odczytem PSE.",
+        "data": {
+          "import_entity": "Licznik poboru (kWh)",
+          "export_entity": "Licznik eksportu (kWh)",
+          "start_date": "Data startu RRRR-MM-DD",
+          "initial_deposit": "Depozyt początkowy PLN",
+          "buy_s1": "Energia S1 netto PLN/kWh",
+          "buy_s2": "Energia S2 netto PLN/kWh",
+          "distribution_s1": "Dystrybucja S1 netto PLN/kWh",
+          "distribution_s2": "Dystrybucja S2 netto PLN/kWh",
+          "quality": "Jakościowa netto PLN/kWh",
+          "cogen": "Kogeneracyjna netto PLN/kWh",
+          "oze": "OZE netto PLN/kWh",
+          "fixed_trade": "Handlowa netto PLN/mies.",
+          "fixed_power": "Mocowa netto PLN/mies.",
+          "fixed_network": "Sieciowa stała netto PLN/mies.",
+          "fixed_subscription": "Abonament netto PLN/mies.",
+          "vat": "VAT (0.23)",
+          "rce_price": "Ręczna cena RCE netto PLN/kWh (0 = brak ceny)",
+          "rce_multiplier": "Mnożnik depozytu"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Zmień ustawienia",
+        "data": {
+          "import_entity": "Licznik poboru",
+          "export_entity": "Licznik eksportu",
+          "start_date": "start_date",
+          "initial_deposit": "initial_deposit",
+          "buy_s1": "buy_s1",
+          "buy_s2": "buy_s2",
+          "distribution_s1": "distribution_s1",
+          "distribution_s2": "distribution_s2",
+          "quality": "quality",
+          "cogen": "cogen",
+          "oze": "oze",
+          "fixed_trade": "fixed_trade",
+          "fixed_power": "fixed_power",
+          "fixed_network": "fixed_network",
+          "fixed_subscription": "fixed_subscription",
+          "vat": "vat",
+          "rce_price": "rce_price",
+          "rce_multiplier": "rce_multiplier"
+        }
+      }
+    }
+  }
+}
