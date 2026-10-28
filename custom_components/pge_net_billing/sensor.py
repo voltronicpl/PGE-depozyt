@@ -1,5 +1,5 @@
 from __future__ import annotations
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.helpers.entity import DeviceInfo
 from .const import DOMAIN
 
@@ -22,6 +22,11 @@ SENSORS = [
  ('invoice_forecast','Prognoza rachunku za bieżący miesiąc','PLN'),
 ]
 
+# Running totals -> long-term statistics 'change' per day/week/month
+CUMULATIVE_PLN={'energy_cost','distribution_cost','export_value'}
+# Point-in-time values -> min/mean/max statistics for sparklines
+SNAPSHOT_PLN={'invoice_forecast','deposit_estimate','rce_current'}
+
 async def async_setup_entry(hass, entry, async_add_entities):
     ledger=hass.data[DOMAIN][entry.entry_id]
     async_add_entities([PGESensor(ledger, entry, *spec) for spec in SENSORS])
@@ -35,8 +40,18 @@ class PGESensor(SensorEntity):
         self._attr_unique_id=f'{entry.entry_id}_{key}'
         self._attr_native_unit_of_measurement=unit
         self._attr_device_info=DeviceInfo(identifiers={(DOMAIN,entry.entry_id)},name='PGE Net-Billing — szacunki',manufacturer='Custom')
+        # translation_key lets the frontend find entities without guessing friendly names
+        self._attr_translation_key=key
         if unit=='kWh':self._attr_state_class=SensorStateClass.TOTAL
-        self._attr_extra_state_attributes={'note':'Szacunek lokalny, nie oficjalne rozliczenie PGE'}
+        elif key in CUMULATIVE_PLN:
+            self._attr_device_class=SensorDeviceClass.MONETARY
+            self._attr_state_class=SensorStateClass.TOTAL
+        elif key in SNAPSHOT_PLN:
+            self._attr_state_class=SensorStateClass.MEASUREMENT
+
+    @property
+    def extra_state_attributes(self):
+        return {'note':'Szacunek lokalny, nie oficjalne rozliczenie PGE', **self.ledger.attributes(self.key)}
 
     @property
     def native_value(self):return self.ledger.value(self.key)
