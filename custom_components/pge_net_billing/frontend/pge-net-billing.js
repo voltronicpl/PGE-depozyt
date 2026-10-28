@@ -155,7 +155,7 @@ class PGEPanel extends PGEBase{
     return values.map((v,i)=>{const x=28+i*(640/Math.max(1,n)),h1=v.buy/max*72,h2=v.sell/max*72;return `<rect x="${x}" y="${93-h1}" width="22" height="${h1}" rx="1" fill="#ffa51f"/><rect x="${x}" y="96" width="22" height="${h2}" rx="1" fill="#0fcf8c"/>`;}).join("");
   };
   this.shadowRoot.innerHTML=`<style>${css}</style><main class="pge-full">
-  <div class="pf-head"><div class="pf-brand">${logo}<div><strong>PGE Net-Billing</strong><div class="pf-sub">PGE Obrót · Dystrybucja · RCE · G12</div></div></div><div class="pf-date"><div class="pf-date-row"><span>▣ &nbsp;${esc(month)}</span><span><button class="prev" aria-label="Poprzedni miesiąc">‹</button><button class="next" aria-label="Następny miesiąc">›</button></span></div><div class="pf-updated"><i></i>Odczyty z Home Assistant · na żywo</div></div></div>
+  <div class="pf-head"><div class="pf-brand">${logo}<div><strong>PGE Net-Billing</strong><div class="pf-sub">PGE Obrót · Dystrybucja · RCE · G12</div></div></div><div class="pf-date"><div class="pf-date-row"><span>▣ &nbsp;${esc(month)}</span><span><span style="color:#7293a9;font-size:12px">Bieżący miesiąc</span></span></div><div class="pf-updated"><i></i>Odczyty z Home Assistant · na żywo</div></div></div>
   <div class="pf-grid"><div class="pf-main">
    <div class="pf-top">
     ${top("▤","Szacowana kwota rachunku",money(inv),"pf-orange",`<div class="pf-muted">Prognoza bieżącego miesiąca</div><div style="margin-top:21px">${hist("invoice_forecast","#ff4858")}</div>`)}
@@ -181,8 +181,6 @@ class PGEPanel extends PGEBase{
    <div class="pf-box pf-smallcard">${icon("▣","blue")}<div><div class="pf-val pf-green">${esc(money(dep))}</div><div class="pf-muted">Saldo depozytu</div>${hist("deposit_estimate","#16e69a")}</div></div>
    <div class="pf-box"><div class="pf-brand">${logo}<div>PGE Net-Billing</div></div><div class="pf-between"><span>Pobrano<br><strong class="pf-orange">${esc(energy(imp))}</strong></span><span>Oddano<br><strong class="pf-green">${esc(energy(exp))}</strong></span></div>${bar(bal)}<div class="pf-between"><strong class="pf-green">${esc(energy(bal))}</strong><strong class="pf-blue">${esc(money(dep))}</strong></div></div>
   </aside></div><div class="pf-note">Kwoty są prognozą lokalną, nie fakturą PGE. Miesiąc w nagłówku jest etykietą widoku; dane finansowe pozostają bieżące.</div></main>`;
-  this.shadowRoot.querySelector(".prev")?.addEventListener("click",()=>{this._monthOffset--;this.draw();});
-  this.shadowRoot.querySelector(".next")?.addEventListener("click",()=>{this._monthOffset++;this.draw();});
  }
 }
 if(!customElements.get("pge-net-billing-card"))customElements.define("pge-net-billing-card",PGECompactCard);
