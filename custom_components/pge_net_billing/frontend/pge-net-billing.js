@@ -1,6 +1,7 @@
-/* PGE Net-Billing v1.1.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.2.2 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+(() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.1.0";
+const VERSION = "1.2.2";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -16,7 +17,8 @@ const NF = new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 2, maximumFra
 const NF4 = new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 const isNum = v => v !== null && v !== undefined && Number.isFinite(Number(v));
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const fmt = (v, unit, signed = false) => !isNum(v) ? "—" : (signed && v > 0 ? "+" : "") + NF.format(v) + (unit ? " " + unit : "");
+const group = n => { const [i, f] = NF.format(Math.abs(n)).replace(/\s/g, "").split(","); return (n < 0 ? "-" : "") + i.replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0") + (f !== undefined ? "," + f : ""); };
+const fmt = (v, unit, signed = false) => !isNum(v) ? "—" : (signed && v > 0 ? "+" : "") + group(Number(v)) + (unit ? " " + unit : "");
 const zl = (v, s) => fmt(v, "zł", s);
 const kwh = (v, s) => fmt(v, "kWh", s);
 const pad = n => String(n).padStart(2, "0");
@@ -157,29 +159,37 @@ let gid = 0;
 function spark(values, color, w = 120, h = 44) {
   const v = values.filter(isNum);
   if (v.length < 2) return `<div class="nohist" style="height:${h}px">brak historii</div>`;
-  const lo = Math.min(...v), hi = Math.max(...v), d = hi - lo || 1;
-  const pts = v.map((y, i) => [i / (v.length - 1) * w, h - 3 - (y - lo) / d * (h - 8)]);
-  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  // bucket-average to <=12 points, then Catmull-Rom -> cubic Bézier (smooth like the mockup)
+  const n = Math.min(12, v.length), b = [];
+  for (let i = 0; i < n; i++) { const a = Math.floor(i * v.length / n), z = Math.max(a + 1, Math.floor((i + 1) * v.length / n)); const part = v.slice(a, z); b.push(part.reduce((s, x) => s + x, 0) / part.length); }
+  const lo = Math.min(...b), hi = Math.max(...b), d = hi - lo || 1;
+  const pts = b.map((y, i) => [i / (b.length - 1) * w, h - 4 - (y - lo) / d * (h * .72)]);
+  let line = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6], c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    line += ` C${c1[0].toFixed(1)} ${c1[1].toFixed(1)} ${c2[0].toFixed(1)} ${c2[1].toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
   const id = "pg" + (++gid);
-  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="height:${h}px"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".45"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="${line} L${w} ${h} L0 ${h} Z" fill="url(#${id})"/><path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="height:${h}px"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".5"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="${line} L${w} ${h} L0 ${h} Z" fill="url(#${id})"/><path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
 }
 const icon = (name, tone, cls = "") => `<span class="ic ic-${tone} ${cls}"><ha-icon icon="mdi:${name}"></ha-icon></span>`;
 const bar = (pct, kind = "money") => `<div class="bar bar-${kind}"><i style="left:${Math.max(2, Math.min(98, pct)).toFixed(1)}%"></i></div>`;
 function depositScale(v) { return Math.max(500, Math.ceil(Math.abs(Number(v) || 0) / 500) * 500); }
 function depositPct(v) { const s = depositScale(v); return 50 + (Number(v) || 0) / s * 50; }
 function energyPct(imp, exp) { const t = (Number(imp) || 0) + (Number(exp) || 0); return t > 0 ? exp / t * 100 : 50; }
-function delta(cur, prev, upIsBad) {
+function delta(cur, prev, upIsBad, plus = true) {
   if (!isNum(cur) || !isNum(prev) || Number(prev) === 0) return "";
   const p = (cur - prev) / Math.abs(prev) * 100, up = p >= 0;
   const bad = upIsBad ? up : !up;
-  return `<span class="delta ${bad ? "t-red" : "t-green"}"><ha-icon icon="mdi:arrow-${up ? "up" : "down"}"></ha-icon>${up ? "+" : "−"}${Math.abs(p).toFixed(0)}%</span>`;
+  return `<span class="delta ${bad ? "t-red" : "t-green"}"><ha-icon icon="mdi:arrow-${up ? "up" : "down"}"></ha-icon>${plus ? (up ? "+" : "−") : ""}${Math.abs(p).toFixed(0)}%</span>`;
 }
 function logo(config, size = "lg") {
   if (config?.logo) return `<img class="logo logo-${size}" src="${esc(config.logo)}" alt="">`;
   return `<span class="logo logo-${size} logo-badge"><ha-icon icon="mdi:transmission-tower"></ha-icon></span>`;
 }
 function flowChart(flow) {
-  const W = 680, H = 206, L = 34, R = 8, T = 24, B = 26;
+  const W = 680, H = 178, L = 34, R = 8, T = 20, B = 22;
   const vals = flow.flatMap(x => [x.v?.imp, x.v?.exp]).filter(isNum).map(Number);
   if (!vals.length) return `<div class="nohist big">Brak historii dziennej z Recordera – wykres pojawi się po pierwszych pełnych dobach.</div>`;
   const raw = Math.max(1, ...vals);
@@ -197,14 +207,19 @@ function flowChart(flow) {
 }
 
 /* ---------- shared tiles (panel aside + Lovelace) ---------- */
+const CICON = {
+  bill: `<svg viewBox="0 0 24 24"><path d="M15.5 13.2V4.8A1.8 1.8 0 0 0 13.7 3H6.3a1.8 1.8 0 0 0-1.8 1.8v14.4A1.8 1.8 0 0 0 6.3 21h6"/><path d="M8 7.5h4.5M8 10.8h4.5M8 14.1h3"/><circle cx="17.3" cy="18.2" r="2.8"/></svg>`,
+  wallet: `<svg viewBox="0 0 24 24"><path d="M5.5 7.2 15.6 4.1a1.4 1.4 0 0 1 1.8 1.3v1.8"/><rect x="3.2" y="7.2" width="17.6" height="12.8" rx="2.6"/><path d="M20.8 11.2h-4.2a2.4 2.4 0 0 0 0 4.8h4.2"/><circle cx="16.8" cy="13.6" r=".6" fill="currentColor"/></svg>`,
+  leaf: `<svg viewBox="0 0 24 24"><path d="M19.6 4.2C11.3 3.6 5.3 7.4 5.3 13.6c0 3.4 2.5 6 5.9 6 6.1 0 9.4-6.6 8.4-15.4z"/><path d="M4 20.6 15.6 9M10.2 14.6h4.2M10.2 14.6v-3.7"/></svg>`,
+};
 const TILES = {
   compact(m, c) {
-    const cell = (ic, tone, label, value, cls, extra, vals, col) => `<div class="c-cell"><div class="c-row"><span class="c-ic c-${tone}"><ha-icon icon="mdi:${ic}"></ha-icon></span><div class="c-txt"><div class="c-label">${label}</div><div class="c-val ${cls}">${value}</div>${extra ? `<div class="c-extra">${extra}</div>` : ""}</div></div><div class="c-spark">${spark(vals, col, 120, 46)}</div></div>`;
+    const cell = (ic, tone, label, value, cls, extra, vals, col) => `<div class="c-cell"><div class="c-row"><span class="c-ic c-${tone}">${CICON[ic]}</span><div class="c-txt"><div class="c-label">${label}</div><div class="c-val ${cls}">${value}</div>${extra ? `<div class="c-extra">${extra}</div>` : ""}</div></div><div class="c-spark">${spark(vals, col, 100, 34)}</div></div>`;
     const unit = (txt, u) => txt === "—" ? txt : txt.replace(" " + u, `<small> ${u}</small>`);
     return `<div class="tile t-compact link"><div class="c-head">${logo(c, "md")}<div><div class="c-title">Net-Billing</div><div class="c-month">${esc(monthName(m.sel))}</div></div></div>
       <div class="c-grid">
-        ${cell("file-document-outline", "orange", "Rachunek", zl(m.invoice), "", delta(m.invoice, m.invoicePrev, true), m.spark.invoice, TONE.red)}
-        ${cell("wallet-outline", "blue", "Saldo", zl(m.deposit, true), "t-green", "", m.spark.deposit, TONE.blue)}
+        ${cell("bill", "orange", "Rachunek", zl(m.invoice), "", delta(m.invoice, m.invoicePrev, true, false), m.spark.invoice, TONE.red)}
+        ${cell("wallet", "blue", "Saldo", zl(m.deposit, true), "t-green", "", m.spark.deposit, TONE.blue)}
         ${cell("leaf", "green", "Bilans", unit(kwh(m.month.bal, true), "kWh"), isNum(m.month.bal) && m.month.bal < 0 ? "t-red" : "t-green", "", m.spark.bal.length ? m.spark.bal : m.spark.exp, TONE.green)}
       </div></div>`;
   },
@@ -216,13 +231,13 @@ const TILES = {
       <div class="split"><div><div class="v-md t-orange">${zl(m.invoice)}</div><div class="muted">Rachunek (${MONTH_SHORT[m.sel.getMonth()]})</div></div><div class="r"><div class="v-md t-green">${kwh(m.month.bal, true)}</div><div class="muted">Bilans energii</div></div></div></div>`;
   },
   invoice(m) {
-    return `<div class="tile t-mini link">${icon("file-document-outline", "orange", "ic-lg")}<div class="t-body"><div class="v-lg t-orange">${zl(m.invoice)}</div><div class="muted">Rachunek ${monthOnly(m.sel)}</div>${delta(m.invoice, m.invoicePrev, true)}</div><div class="t-spark">${spark(m.spark.invoice, TONE.red, 90, 56)}</div></div>`;
+    return `<div class="tile t-mini link">${`<span class="ic ic-orange ic-lg">${CICON.bill}</span>`}<div class="t-body"><div class="v-lg t-orange">${zl(m.invoice)}</div><div class="muted">Rachunek ${monthOnly(m.sel)}</div>${delta(m.invoice, m.invoicePrev, true)}</div><div class="t-spark">${spark(m.spark.invoice, TONE.red, 90, 56)}</div></div>`;
   },
   balance(m) {
-    return `<div class="tile t-mini link">${icon("leaf", "green", "ic-lg")}<div class="t-body"><div class="v-lg ${isNum(m.month.bal) && m.month.bal < 0 ? "t-red" : "t-green"}">${kwh(m.month.bal, true)}</div><div class="muted">Bilans energii</div></div><div class="t-spark">${spark(m.spark.bal.length ? m.spark.bal : m.spark.exp, TONE.green, 90, 56)}</div></div>`;
+    return `<div class="tile t-mini link">${`<span class="ic ic-green ic-lg">${CICON.leaf}</span>`}<div class="t-body"><div class="v-lg ${isNum(m.month.bal) && m.month.bal < 0 ? "t-red" : "t-green"}">${kwh(m.month.bal, true)}</div><div class="muted">Bilans energii</div></div><div class="t-spark">${spark(m.spark.bal.length ? m.spark.bal : m.spark.exp, TONE.green, 90, 56)}</div></div>`;
   },
   wallet(m) {
-    return `<div class="tile t-mini link">${icon("wallet-outline", "blue", "ic-lg")}<div class="t-body"><div class="v-lg t-green">${zl(m.deposit, true)}</div><div class="muted">Saldo depozytu</div></div><div class="t-spark">${spark(m.spark.deposit, TONE.green, 90, 56)}</div></div>`;
+    return `<div class="tile t-mini link">${`<span class="ic ic-blue ic-lg">${CICON.wallet}</span>`}<div class="t-body"><div class="v-lg t-green">${zl(m.deposit, true)}</div><div class="muted">Saldo depozytu</div></div><div class="t-spark">${spark(m.spark.deposit, TONE.green, 90, 56)}</div></div>`;
   },
   summary(m, c) {
     return `<div class="tile t-summary link"><div class="t-head">${logo(c, "sm")}<span class="t-title">PGE Net-Billing</span></div>
@@ -235,13 +250,13 @@ const TILES = {
 
 /* ---------- styles ---------- */
 const CSS = `
-:host{display:block;--bg:#06111b;--card1:#0c1f2e;--card2:#081826;--line:#14293a;--txt:#eaf2f9;--mut:#9db2c3;--mut2:#c9d7e2;--o:#ffad2e;--g:#18e08e;--b:#3b8cff;--r:#ff4757;color:var(--txt);font-family:Inter,Roboto,"Segoe UI",Arial,sans-serif}
+:host{display:block;container-type:inline-size;--pge-font:var(--paper-font-body1_-_font-family,Roboto),Roboto,"Segoe UI",Arial,sans-serif;--bg:#06111b;--card1:#0c1f2e;--card2:#081826;--line:#14293a;--txt:#eaf2f9;--mut:#9db2c3;--mut2:#c9d7e2;--o:#ffad2e;--g:#18e08e;--b:#3b8cff;--r:#ff4757;color:var(--txt);font-family:var(--pge-font)}
 *{box-sizing:border-box}ha-icon{--mdc-icon-size:100%;display:inline-flex;width:100%;height:100%}
 .t-orange{color:var(--o)}.t-green{color:var(--g)}.t-blue{color:var(--b)}.t-blue2{color:#7fb3ff}.t-red{color:var(--r)}
 .muted{color:var(--mut);font-size:13px}.muted2{color:var(--mut2);font-size:13px}.r{text-align:right}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .box,.tile{background:linear-gradient(150deg,var(--card1),var(--card2));border:1px solid var(--line);border-radius:16px;min-width:0;position:relative}
 .ic{flex:0 0 auto;display:grid;place-items:center;width:42px;height:42px;border-radius:12px;padding:9px}
-.ic.ic-lg{width:54px;height:54px;padding:12px;border-radius:14px}
+.ic.ic-lg{width:54px;height:54px;padding:12px;border-radius:14px}.ic svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .ic-orange{color:#ffaa22;background:linear-gradient(145deg,#3a2c12,#271f12)}.ic-green{color:#1fe090;background:linear-gradient(145deg,#0c3a2c,#0a2a22)}
 .ic-blue{color:#3d8dff;background:linear-gradient(145deg,#0e2f63,#0b2246)}.ic-red{color:#ff4757;background:linear-gradient(145deg,#3c1820,#2a141a)}
 .ic-plain{background:none;padding:2px}
@@ -255,62 +270,76 @@ const CSS = `
 /* Lovelace / aside tiles */
 .tile{padding:16px 18px;overflow:hidden}
 .t-head{display:flex;align-items:center;gap:12px}.t-title{font-size:15px;font-weight:600;flex:1}.chev{width:22px;height:22px;color:var(--mut)}
-.t-feature .t-center{text-align:center;margin-top:4px}.v-xl{font-size:28px;font-weight:800;letter-spacing:-.4px}.v-lg{font-size:25px;font-weight:800;letter-spacing:-.3px}.v-md{font-size:18px;font-weight:800;letter-spacing:-.2px}
+.t-feature .t-center{text-align:center;margin-top:4px}.v-xl{font-size:28px;font-weight:800;letter-spacing:-.4px}.v-lg{font-size:25px;font-weight:800;letter-spacing:-.3px}.v-md{font-size:19px;font-weight:800;letter-spacing:-.2px}
 .split{display:flex;justify-content:space-between;gap:10px;align-items:flex-end}.split>div{min-width:0}
 .t-mini{display:flex;align-items:flex-start;gap:16px;min-height:126px}.t-mini .t-body{flex:1;min-width:0;padding-top:4px;position:relative;z-index:1}.t-mini .muted{margin-top:6px;font-size:14px}.t-mini .t-spark{position:absolute;right:14px;bottom:12px;width:36%}.t-foot .t-spark{flex:0 0 36%;align-self:flex-end}.v-lg,.v-md,.v-xl{white-space:nowrap}
-.t-summary .split{margin-top:12px}.t-summary .bar{margin:14px 0 6px}.t-foot{display:flex;align-items:center;gap:12px;margin-top:16px}.t-foot .t-body{flex:1;min-width:0}
-/* Compact 3-column card (default Lovelace tile) */
-.t-compact{padding:16px 16px 10px;border-radius:18px;background:linear-gradient(135deg,#0b1b28,#0a1621 60%,#0b1d2a)}
-.c-head{display:flex;align-items:center;gap:14px;margin-bottom:14px}.logo-md{width:48px;height:48px;padding:10px;border-radius:13px}img.logo-md{width:84px;height:46px}
-.c-title{font-size:20px;font-weight:700;letter-spacing:-.2px}.c-month{color:var(--mut);font-size:14px;margin-top:2px}
-.c-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
-.c-cell{min-width:0;padding:0 12px;border-left:1px solid #1d3344;display:flex;flex-direction:column}.c-cell:first-child{border-left:0;padding-left:0}.c-cell:last-child{padding-right:0}
-.c-row{display:flex;align-items:flex-start;gap:10px}
-.c-ic{flex:0 0 44px;width:44px;height:44px;border-radius:50%;padding:10px;display:grid;place-items:center;margin-top:2px}
-.c-orange{color:#ffaa22;background:radial-gradient(circle at 35% 30%,#4a3613,#2a2014)}.c-blue{color:#3d8dff;background:radial-gradient(circle at 35% 30%,#123a78,#0b2246)}.c-green{color:#1fe090;background:radial-gradient(circle at 35% 30%,#0f4535,#0a2a22)}
-.c-txt{min-width:0}.c-label{font-size:15px;color:#e7f0f7}.c-val{font-size:clamp(15px,2.1vw,22px);font-weight:600;letter-spacing:-.3px;white-space:nowrap;margin-top:2px}.c-val small{font-size:.72em;font-weight:500}
-.c-extra .delta{font-size:14px;margin-top:2px}.c-extra .delta ha-icon{width:16px;height:16px}
-.c-spark{margin:auto 0 0 54px;padding-top:6px}
-@media(max-width:520px){.c-ic{flex-basis:32px;width:32px;height:32px;padding:7px}.c-spark{margin-left:0}.c-cell{padding:0 7px}.c-label{font-size:13px}.c-title{font-size:17px}}
+.t-summary .split{margin-top:12px}.t-summary .bar{margin:14px 0 6px}.t-foot{display:flex;align-items:center;gap:12px;margin-top:16px}.t-foot .t-body{flex:1;min-width:0;white-space:nowrap}
+/* Compact 3-column card – sizes measured from the 396x161 px mockup (Roboto, as in HA) */
+.t-compact{padding:14px 13px 0 17px;height:161px;border-radius:14px;border:1px solid #1b2e3c;background:linear-gradient(160deg,#0c1d2a 0%,#0a1824 55%,#081520 100%);font-family:var(--pge-font)}
+.c-head{display:flex;align-items:center;gap:13px;height:40px;margin-bottom:13px}
+.logo-md{width:36px;height:36px;padding:7px;border-radius:10px}img.logo-md{width:66px;height:36px;object-fit:contain;object-position:left center}
+.c-title{font-size:16px;font-weight:700;line-height:20px;letter-spacing:-.1px;color:#f3f7fa}.c-month{color:#8fadc4;font-size:11.5px;line-height:15px;margin-top:3px}
+.c-grid{display:grid;grid-template-columns:.95fr 1fr 1fr;height:84px;margin-left:-4px}
+.c-cell{min-width:0;position:relative;padding:0 0 0 5px;border-left:1px solid #1a2c3a}.c-cell:first-child{border-left:0;padding-left:0}
+.c-row{display:flex;align-items:flex-start;gap:5px}
+.c-ic{flex:0 0 40px;width:40px;height:40px;border-radius:50%;padding:8px;display:grid;place-items:center}
+.c-ic svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.c-orange{color:#f5a41d;background:#2c2820}.c-blue{color:#2386ff;background:#0a2240}.c-green{color:#14d982;background:#0b2a26}
+.c-txt{min-width:0;padding-top:4px}.c-label{font-size:11.5px;line-height:15px;color:#d9e3ea}
+.c-val{font-size:16px;line-height:20px;font-weight:700;letter-spacing:-.6px;white-space:nowrap;margin-top:2px;color:#f6f9fb}.c-val.t-green{color:#21e08a}.c-val.t-red{color:#ff4757}.c-val small{font-size:12px;font-weight:500;letter-spacing:0}
+.c-extra .delta{font-size:12.5px;font-weight:700;margin-top:4px;gap:3px;color:#ff3b45}.c-extra .delta ha-icon{width:13px;height:13px}
+.c-spark{position:absolute;bottom:1px;left:15px;right:10px}.c-cell:first-child .c-spark{left:45px;right:8px;height:26px}
+.c-spark .spark{height:34px!important}.c-cell:last-child .c-spark{right:0}.c-cell:first-child .c-spark .spark{height:26px!important}.c-spark .nohist{height:26px!important}
+@container (max-width:380px){.t-compact{height:auto;padding-bottom:8px}.c-grid{grid-template-columns:repeat(3,minmax(0,1fr));height:auto}.c-cell{padding-bottom:36px}.c-row{flex-direction:column;gap:6px}.c-ic{flex-basis:32px;width:32px;height:32px;padding:7px}.c-ic svg{width:18px;height:18px}.c-val{font-size:14px}.c-spark,.c-cell:first-child .c-spark{left:4px;right:6px}}
 /* Panel */
-.pf{min-height:100vh;background:radial-gradient(ellipse at 40% -10%,#0b2233 0%,var(--bg) 60%);padding:20px 20px 28px}
-.pf-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px;max-width:1700px;margin:0 auto}
-.pf-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px}.pf-brand{display:flex;align-items:center;gap:16px}
+.pf{min-height:100vh;background:radial-gradient(ellipse at 40% -10%,#0b2233 0%,var(--bg) 60%);padding:16px 17px 24px}
+.pf-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:27px;max-width:1700px;margin:0 auto}
+.pf-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px;min-height:74px}.pf-brand{display:flex;align-items:center;gap:16px}
 .pf-brand h1{font-size:27px;margin:0;font-weight:700;letter-spacing:-.4px}.pf-sub{color:var(--mut);font-size:13px;margin-top:4px}
 .pf-date{background:#0c1f2e;border:1px solid var(--line);border-radius:12px;padding:10px 14px;min-width:270px}
 .pf-date-row{display:flex;align-items:center;gap:10px;font-size:15px}.pf-date-row .ic{width:26px;height:26px;padding:3px;border-radius:7px}.pf-date-row .lbl{flex:1}
 .nav{all:unset;cursor:pointer;width:26px;height:26px;color:var(--mut2);border-radius:6px}.nav:hover{background:#163246}.nav[disabled]{opacity:.25;cursor:default;background:none}
 .pf-upd{font-size:13px;color:var(--mut2);margin-top:8px;display:flex;align-items:center;gap:8px}.pf-upd i{width:9px;height:9px;border-radius:50%;background:var(--g);box-shadow:0 0 6px var(--g)}.pf-upd i.stale{background:#e2a12c;box-shadow:none}
-.top{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-.top .box{padding:18px 18px 16px;min-height:226px;display:flex;flex-direction:column}
-.k-head{display:flex;align-items:flex-start;gap:16px}.k-head .ic{width:54px;height:54px;padding:12px;border-radius:14px}.k-label{font-size:14px;color:var(--mut2);display:flex;align-items:center;gap:6px;padding-top:6px}.info{width:17px;height:17px;color:var(--mut);cursor:help}
-.k-val{font-size:clamp(26px,2.5vw,38px);font-weight:800;letter-spacing:-.6px;margin-top:6px;white-space:nowrap}.k-sub{color:var(--mut2);font-size:14px;margin-top:4px}
+.top{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.top .box{padding:16px 16px 14px;min-height:220px;display:flex;flex-direction:column}
+.k-head{display:flex;align-items:flex-start;gap:16px}.k-head .ic{width:54px;height:54px;padding:11px;border-radius:14px}.k-head .ic svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.k-label{font-size:13px;white-space:nowrap;color:var(--mut2);display:flex;align-items:center;gap:6px;padding-top:6px}.info{width:17px;height:17px;color:var(--mut);cursor:help}
+.k-val{font-size:clamp(26px,2.6vw,36px);font-weight:800;letter-spacing:-.6px;margin-top:6px;white-space:nowrap}.k-sub{color:var(--mut2);font-size:14px;margin-top:4px}
 .k-bottom{display:flex;align-items:flex-end;gap:8px;margin-top:auto}.k-bottom>div:first-child{flex:1;min-width:0}.k-bottom .spark-wrap{flex:0 0 46%}
 .k-ends{display:flex;justify-content:space-between;font-size:14px;font-weight:600}.k-ends small{display:block;font-weight:400;color:var(--mut);font-size:12px}
-.mid{display:grid;grid-template-columns:minmax(0,2.3fr) minmax(230px,1fr);gap:14px;margin-top:14px}
+.mid{display:grid;grid-template-columns:minmax(0,1fr) 258px;gap:13px;margin-top:13px}
 .chart{padding:16px 16px 8px}.chart-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 h3{margin:0;font-size:16px;font-weight:700}h3 span{font-weight:400;color:var(--mut2)}.legend{font-size:13px;color:var(--mut2);display:flex;gap:16px}.legend b{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
 .flow{width:100%;height:auto;display:block;margin-top:8px}.flow text{fill:#c3d1dc;font-size:11px}.flow .unit{fill:#c3d1dc}.flow .grid{stroke:#173044;stroke-width:1}.flow .zero{stroke:#2b5470;stroke-width:1.2}
-.stack{display:grid;gap:12px;grid-auto-rows:1fr}.stack .box{display:flex;align-items:center;gap:14px;padding:12px 14px}.stack .s-body{flex:1;min-width:0}.stack .s-val{font-size:17px;font-weight:700;margin-top:3px;white-space:nowrap}.stack .spark-wrap{flex:0 0 38%}
-.bot{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:14px}.bot .box{padding:16px;min-height:158px;display:flex;gap:14px}.bot .ic{width:36px;height:36px;padding:5px}.bot .b-body{flex:1;min-width:0;display:flex;flex-direction:column}
-.b-val{font-size:clamp(19px,1.7vw,25px);font-weight:700;margin-top:6px;white-space:nowrap}.b-note{font-size:13px;color:var(--mut2)}.bot .delta{font-size:15px}.b-foot{display:flex;align-items:flex-end;gap:6px;margin-top:auto}.b-foot>div:first-child{flex:1}.b-foot .spark-wrap{flex:0 0 48%}
+.stack{display:grid;gap:12px;grid-auto-rows:1fr}.stack .box{display:flex;align-items:center;gap:14px;padding:12px 14px}.stack .s-body{flex:1;min-width:0;white-space:nowrap}.stack .s-body .muted2{font-size:12.5px}.stack .s-val{font-size:16px;font-weight:700;margin-top:3px;white-space:nowrap}.stack .spark-wrap{flex:0 0 64px}.stack .box{gap:10px;padding:10px 12px}
+.bot{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-top:13px}.bot .box{padding:14px 14px 10px;min-height:153px;display:flex;gap:14px}.bot .ic{width:36px;height:36px;padding:5px}.bot .b-body{flex:1;min-width:0;display:flex;flex-direction:column}
+.b-val{font-size:clamp(19px,1.7vw,25px);font-weight:700;margin-top:6px;white-space:nowrap}.b-note{font-size:13px;color:var(--mut2)}.bot .delta{font-size:15px}.b-foot{display:flex;align-items:flex-end;gap:6px;margin-top:8px;flex:1;position:relative;min-height:48px}.b-foot>div:first-child{align-self:flex-start}.b-foot>div:first-child{flex:1;position:relative;z-index:1}.b-foot .b-note{white-space:nowrap;font-size:12px}.b-foot .spark-wrap{position:absolute;right:0;bottom:0;width:42%}
 .zone{display:flex;align-items:center;gap:10px;margin-top:auto}.zone .ic{width:34px;height:34px;padding:4px}
-.tables{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.tables .box{padding:16px 16px 6px}
-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}th{font-weight:400;color:var(--mut2);text-align:right;padding:9px 6px;background:#0f2536}td{text-align:right;padding:10px 6px;border-bottom:1px solid #132b3c;white-space:nowrap}tr:last-child td{border-bottom:0}th:first-child,td:first-child{text-align:left}
+.tables{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:13px}.tables .box{padding:16px 16px 6px}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}th{font-weight:400;color:var(--mut2);text-align:right;padding:9px 6px;background:#0f2536}td{text-align:right;padding:9px 6px;border-bottom:1px solid #132b3c;white-space:nowrap}tr:last-child td{border-bottom:0}th:first-child,td:first-child{text-align:left}
 .aside h2{font-size:19px;font-weight:500;margin:6px 0 16px}.aside .tile{margin-bottom:14px}
 .foot{color:#6f8ca0;font-size:11px;margin-top:14px;max-width:1700px;margin-left:auto;margin-right:auto}
 .warn{background:#2a1d0c;border:1px solid #5a3d12;color:#ffcf80;border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px}
-@media(max-width:1350px){.pf-grid{grid-template-columns:1fr}.aside{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}.aside h2{grid-column:1/-1;margin:0}.aside .tile{margin:0}}
-@media(max-width:1100px){.bot{grid-template-columns:repeat(2,minmax(0,1fr))}.mid{grid-template-columns:1fr}.stack{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:1100px){.pf-grid{grid-template-columns:1fr}.aside{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}.aside h2{grid-column:1/-1;margin:0}.aside .tile{margin:0}}
+@media(max-width:1000px){.bot{grid-template-columns:repeat(2,minmax(0,1fr))}.mid{grid-template-columns:1fr}.stack{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:820px){.pf{padding:12px}.top,.tables,.stack{grid-template-columns:1fr}.pf-head{flex-wrap:wrap}.pf-date{min-width:0;width:100%}.top .box{min-height:0}}
 @media(max-width:480px){.bot{grid-template-columns:1fr}.k-val{font-size:28px}.tables .box{overflow-x:auto}table{font-size:11.5px}td,th{padding:8px 3px}.flow{min-height:170px}.flow text{font-size:15px}}
 `;
 
+/* ---------- optional Inter font: `font: inter` in card config (default = HA's Roboto) ---------- */
+function ensureFont(config) {
+  if (config?.font !== "inter" || document.getElementById("pge-inter-font")) return;
+  const l = document.createElement("link");
+  l.id = "pge-inter-font"; l.rel = "stylesheet";
+  l.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap";
+  document.head.appendChild(l);
+}
+
 /* ---------- base element ---------- */
 class PGEBase extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); this._config = {}; this._offset = 0; this._raw = null; this._sig = ""; }
-  setConfig(config) { this._config = config || {}; this._sig = ""; this._refresh(); }
+  setConfig(config) { this._config = config || {}; ensureFont(this._config); this._sig = ""; this._refresh(); }
   set hass(h) {
+    if (!this._font) { this._font = true; ensureFont(this._config); }
     this._hass = h;
     this._ids = resolveEntities(h, this._config);
     const sig = KEYS.map(k => { const s = h?.states?.[this._ids[k]]; return s ? s.state + s.last_updated : "-"; }).join("|") + this._offset;
@@ -352,6 +381,7 @@ for (const [tag, variant, name, description] of CARDS) {
     }
   };
   if (!customElements.get(tag)) customElements.define(tag, cls);
+  else console.warn(`PGE Net-Billing v${VERSION}: <${tag}> was already defined by an OLDER copy of this script (leftover Lovelace resource?) – the card will show the old look until it is removed.`);
   window.customCards = window.customCards || [];
   if (!window.customCards.some(c => c.type === tag)) window.customCards.push({ type: tag, name, description, preview: true });
 }
@@ -382,15 +412,15 @@ class PGEPanel extends PGEBase {
   ${m.hasStats ? "" : `<div class="warn">Brak statystyk długoterminowych z Recordera – tabele, wykresy i porównania pojawią się po pierwszych godzinach/dobach zbierania danych.</div>`}
 
   <section class="top">
-    <div class="box"><div class="k-head">${icon("file-document-outline", "orange")}<div><div class="k-label">Szacowana kwota rachunku ${info("Prognoza lokalna (energia po depozycie + dystrybucja + opłaty stałe, brutto). To nie jest faktura PGE.")}</div>
+    <div class="box"><div class="k-head"><span class="ic ic-orange">${CICON.bill}</span><div><div class="k-label">Szacowana kwota rachunku ${info("Prognoza lokalna (energia po depozycie + dystrybucja + opłaty stałe, brutto). To nie jest faktura PGE.")}</div>
       <div class="k-val t-orange">${zl(m.invoice)}</div><div class="k-sub">za ${mAcc} ${m.sel.getFullYear()}</div></div></div>
       <div class="k-bottom"><div>${delta(m.invoice, m.invoicePrev, true)}${invDiff !== null ? `<div class="muted">w porównaniu z ${prevI}<br>(${zl(invDiff, true)})</div>` : ""}</div>${sw(m.spark.invoice, TONE.red, 120, 60)}</div></div>
 
-    <div class="box"><div class="k-head">${icon("wallet-outline", "blue")}<div><div class="k-label">Saldo depozytu prosumenckiego ${info("Prognoza FIFO: wartość eksportu wg RCE × współczynnik, ważna 12 mies. To nie jest saldo bankowe.")}</div>
+    <div class="box"><div class="k-head"><span class="ic ic-blue">${CICON.wallet}</span><div><div class="k-label">Saldo depozytu prosumenckiego ${info("Prognoza FIFO: wartość eksportu wg RCE × współczynnik, ważna 12 mies. To nie jest saldo bankowe.")}</div>
       <div class="k-val t-green">${zl(m.deposit, true)}</div><div class="k-sub">Dostępne środki do rozliczenia</div></div></div>
       <div style="margin-top:auto">${bar(depositPct(m.deposit))}<div class="k-ends"><span>−${sc} zł<small>(do dopłaty)</small></span><span class="r">+${sc} zł<small>(nadwyżka)</small></span></div></div></div>
 
-    <div class="box"><div class="k-head">${icon("leaf", "green")}<div><div class="k-label">Bilans energii ${info("Oddano minus pobrano w wybranym miesiącu (statystyki Recordera).")}</div>
+    <div class="box"><div class="k-head"><span class="ic ic-green">${CICON.leaf}</span><div><div class="k-label">Bilans energii ${info("Oddano minus pobrano w wybranym miesiącu (statystyki Recordera).")}</div>
       <div class="k-val ${isNum(m.month.bal) && m.month.bal < 0 ? "t-red" : "t-green"}">${kwh(m.month.bal, true)}</div><div class="k-sub">${!isNum(m.month.bal) ? "Brak danych" : m.month.bal >= 0 ? "Więcej oddano niż pobrano" : "Więcej pobrano niż oddano"}</div></div></div>
       <div style="margin-top:auto">${bar(energyPct(m.month.imp, m.month.exp), "energy")}<div class="k-ends"><span>Pobrano<small class="t-orange" style="font-size:15px;font-weight:700;color:var(--o)">${kwh(m.month.imp)}</small></span><span class="r">Oddano<small style="font-size:15px;font-weight:700;color:var(--g)">${kwh(m.month.exp)}</small></span></div></div></div>
   </section>
@@ -413,7 +443,7 @@ class PGEPanel extends PGEBase {
       <div class="b-foot" style="margin-top:auto">${spark(m.rceToday, TONE.blue, 200, 40)}</div></div></div>
     <div class="box">${icon("clock-outline", "blue", "ic-plain")}<div class="b-body"><div class="muted2">Taryfa dystrybucji</div><div class="b-val">${esc(tariff?.name || "G12")}</div>
       <div class="b-note">Obecnie: ${zoneKey === "s1" ? "strefa dzienna" : zoneKey === "s2" ? "strefa nocna" : "—"}</div>
-      <div class="zone">${icon(zoneKey === "s2" ? "weather-night" : "white-balance-sunny", zoneKey === "s2" ? "blue" : "orange", "ic-plain")}<div><div class="b-val" style="margin:0;font-size:20px">${isNum(zPrice) ? NF4.format(zPrice) + " zł/kWh" : "—"}</div><div class="b-note" style="font-size:11px">energia + dystrybucja zmienna, brutto</div></div></div></div></div>
+      <div class="zone" title="energia + dystrybucja zmienna, brutto">${icon(zoneKey === "s2" ? "weather-night" : "white-balance-sunny", zoneKey === "s2" ? "blue" : "orange", "ic-plain")}<div><div class="b-val" style="margin:0;font-size:18px">${isNum(zPrice) ? NF4.format(zPrice) + " zł/kWh" : "—"}</div></div></div></div></div>
   </section>
 
   <section class="tables">
@@ -430,5 +460,9 @@ class PGEPanel extends PGEBase {
     this.shadowRoot.querySelectorAll(".aside .link").forEach(el => el.classList.remove("link"));
   }
 }
-if (!customElements.get("pge-net-billing-panel")) customElements.define("pge-net-billing-panel", PGEPanel);
+for (const tag of ["pge-net-billing-dashboard", "pge-net-billing-panel"]) {
+  if (!customElements.get(tag)) customElements.define(tag, tag === "pge-net-billing-panel" ? class extends PGEPanel {} : PGEPanel);
+  else if (tag === "pge-net-billing-dashboard") console.warn("PGE Net-Billing: element already defined by another copy of the script – check Settings → Dashboards → Resources");
+}
 console.info(`%c PGE-NET-BILLING %c v${VERSION} `, "background:#ff3045;color:#fff;font-weight:700", "background:#0c1f2e;color:#fff");
+})();
