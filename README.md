@@ -12,14 +12,8 @@ Skopiuj `custom_components/pge_net_billing` do `/config/custom_components/`, uru
 - Dane z encji integracji; bez wymyślonych kwot.
 
 ### Dodanie małego kafelka
-W Ustawienia → Pulpity → Zasoby dodaj zasób JavaScript (moduł):
-`/pge_net_billing_static/pge-net-billing.js`
-
-Następnie w edytorze dashboardu dodaj kartę ręczną:
-
-```yaml
-type: custom:pge-net-billing-card
-```
+Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing – kafelek**.
+Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
 
