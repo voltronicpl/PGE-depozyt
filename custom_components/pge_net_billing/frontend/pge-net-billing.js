@@ -48,6 +48,35 @@ const css=`
 .pge-v9 .v9-chart svg{display:block;width:100%;height:100%}
 .pge-v9 .v9-empty{font-size:9px;color:#668499;margin-top:12px}
 @media(max-width:460px){.pge-v9{padding:11px 10px}.pge-v9 .v9-cell{padding-left:5px;padding-right:5px}.pge-v9 .v9-row{gap:4px}.pge-v9 .v9-icon{width:25px;height:25px;flex-basis:25px}.pge-v9 .v9-icon svg{width:17px;height:17px}.pge-v9 .v9-value{font-size:clamp(10px,3vw,15px)}.pge-v9 .v9-label{font-size:10px}}
+
+/* Full panel – reference 1600px composition, scoped independently from Lovelace */
+.pge-full{min-height:100vh;background:radial-gradient(ellipse at 42% 0%,#071c2a 0%,#03111b 65%);padding:17px 18px 28px;color:#f3f8fd;font:14px/1.4 Inter,Roboto,Arial,sans-serif}
+.pge-full .pf-head{height:78px;display:flex;align-items:flex-start;justify-content:space-between;gap:15px}
+.pge-full .pf-logo{width:112px;height:65px;flex-shrink:0}
+.pge-full .pf-brand{display:flex;align-items:center;gap:17px}
+.pge-full .pf-brand strong{font-size:25px;letter-spacing:-.5px}.pge-full .pf-sub{font-size:12px;color:#96b6c9;margin-top:3px}
+.pge-full .pf-date{border-radius:10px;background:#0b2333;padding:11px 15px;min-width:280px}
+.pge-full .pf-date-row{display:flex;justify-content:space-between;align-items:center;gap:14px}.pge-full .pf-updated{color:#93b8ce;font-size:12px;margin-top:9px}.pge-full .pf-updated i{display:inline-block;background:#14d98e;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.pge-full .pf-grid{display:grid;grid-template-columns:minmax(0,1fr) 286px;gap:15px}
+.pge-full .pf-main{min-width:0}.pge-full .pf-top{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pge-full .pf-box{border-radius:15px;background:linear-gradient(145deg,#0b2333,#071b29);border:1px solid #112e40;box-shadow:0 8px 18px #0002;min-width:0}
+.pge-full .pf-top>.pf-box{height:228px;padding:18px 16px}
+.pge-full .pf-label{display:flex;align-items:center;gap:12px;font-size:13px;line-height:1.35;color:#e4f0f8}
+.pge-full .pf-icon{display:grid;place-items:center;flex-shrink:0;width:51px;height:51px;border-radius:13px;font-size:30px;background:#17394b}
+.pge-full .pf-icon.orange{color:#ffac21;background:#302b1d}.pge-full .pf-icon.blue{color:#398fff;background:#0b2b59}.pge-full .pf-icon.green{color:#18d88c;background:#0b392f}.pge-full .pf-icon.red{color:#ff4c5a;background:#37232a}
+.pge-full .pf-big{font-size:clamp(24px,2.1vw,33px);font-weight:800;letter-spacing:-.5px;margin:8px 0 4px}
+.pge-full .pf-orange{color:#ffb42b}.pge-full .pf-green{color:#16e69a}.pge-full .pf-red{color:#ff4e5c}.pge-full .pf-blue{color:#42a2ff}
+.pge-full .pf-muted{font-size:12px;color:#a9c1d2}.pge-full .pf-center{margin-left:65px}.pge-full .pf-bar{height:16px;border-radius:12px;background:linear-gradient(90deg,#f42f48,#d6a356 50%,#04d58a);margin-top:21px;position:relative}
+.pge-full .pf-bar i{position:absolute;top:-4px;left:var(--pct);height:24px;width:5px;background:#f1f9ff;border-radius:5px;transform:translateX(-50%)}
+.pge-full .pf-between{display:flex;justify-content:space-between;gap:8px;margin-top:10px;font-size:12px;color:#b4cbda}.pge-full .pf-between strong{font-size:14px}
+.pge-full .pf-middle{display:grid;grid-template-columns:minmax(0,2.55fr) minmax(215px,1fr);gap:12px;margin-top:12px}
+.pge-full .pf-chartbox{height:245px;padding:15px 16px}.pge-full .pf-charthead{display:flex;justify-content:space-between;align-items:center;gap:10px}.pge-full h3{font-size:14px;margin:0;font-weight:700}.pge-full .pf-legend{font-size:11px;color:#bed0dc;white-space:nowrap}
+.pge-full .pf-flow{display:block;width:100%;height:177px;margin-top:9px}.pge-full .pf-stack{display:grid;gap:11px}.pge-full .pf-stack .pf-box{height:74px;padding:11px 13px;display:flex;align-items:center;gap:11px}.pge-full .pf-stack .pf-icon{width:40px;height:43px;font-size:25px}.pge-full .pf-stack .pf-val{font-size:16px;font-weight:750;margin-top:4px}
+.pge-full .pf-bottomtiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:12px}
+.pge-full .pf-bottomtiles .pf-box{height:159px;padding:15px 13px}.pge-full .pf-bottomtiles .pf-icon{width:40px;height:43px;font-size:23px}.pge-full .pf-bottomtiles .pf-val{font-size:20px;font-weight:800;margin-top:8px;white-space:nowrap}.pge-full .pf-mini{display:block;height:37px;width:100%;margin-top:5px}.pge-full .pf-nohist{color:#688da3;font-size:11px}
+.pge-full .pf-tables{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.pge-full .pf-tables .pf-box{min-height:212px;padding:15px}.pge-full table{width:100%;border-collapse:collapse;font-size:11px;margin-top:12px}.pge-full th{color:#8aa9bf;font-weight:400;text-align:right;padding:8px 4px;background:#0c2738}.pge-full td{text-align:right;padding:8px 4px;border-bottom:1px solid #163344}.pge-full th:first-child,.pge-full td:first-child{text-align:left}.pge-full .pf-aside{min-width:0}.pge-full .pf-aside h3{font-size:17px;font-weight:500;margin:0 0 17px}.pge-full .pf-aside .pf-box{padding:15px;margin-bottom:12px;min-height:127px}.pge-full .pf-aside .pf-feature{min-height:217px}.pge-full .pf-aside .pf-feature .pf-bar{margin-top:22px}.pge-full .pf-aside .pf-feature .pf-big{font-size:26px}.pge-full .pf-aside .pf-val{font-size:24px;font-weight:800}.pge-full .pf-aside .pf-smallcard{display:flex;align-items:flex-start;gap:12px}.pge-full .pf-aside .pf-smallcard .pf-icon{width:49px;height:49px}.pge-full .pf-note{color:#87a7bb;font-size:10px;margin-top:9px}
+@media(max-width:1250px){.pge-full .pf-grid{grid-template-columns:1fr}.pge-full .pf-aside{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.pge-full .pf-aside h3{grid-column:1/-1;margin:4px 0}.pge-full .pf-aside .pf-box{margin:0}.pge-full .pf-aside .pf-feature{min-height:170px}}
+@media(max-width:780px){.pge-full{padding:12px}.pge-full .pf-head{height:auto;margin-bottom:15px;flex-wrap:wrap}.pge-full .pf-date{min-width:0}.pge-full .pf-top{grid-template-columns:1fr}.pge-full .pf-top>.pf-box{height:auto;min-height:175px}.pge-full .pf-middle{grid-template-columns:1fr}.pge-full .pf-stack{grid-template-columns:1fr}.pge-full .pf-bottomtiles{grid-template-columns:repeat(2,1fr)}.pge-full .pf-tables{grid-template-columns:1fr}.pge-full .pf-aside{grid-template-columns:1fr}}
 `;
 function esc(v){return String(v??"—").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function fmt(v,unit){const n=Number(v);return v!==null&&v!==undefined&&v!==""&&Number.isFinite(n)?new Intl.NumberFormat("pl-PL",{minimumFractionDigits:2,maximumFractionDigits:2}).format(n)+" "+unit:"—";}
@@ -102,41 +131,58 @@ class PGECompactCard extends PGEBase{
  }
 }
 class PGEPanel extends PGEBase{
+ constructor(){super();this._monthOffset=0;}
  draw(){
   if(!this.shadowRoot)return;
-  const imp=this.import(),exp=this.val("export_kwh"),dep=this.val("deposit_estimate"),bal=this.balance(),invoice=this.val("invoice_forecast");
-  const tile=(label,value,cls,icon,trend)=>`<div class="metric"><div class="kicker"><span class="glyph">${icon}</span>${esc(label)}</div><div class="num ${cls}">${esc(value)}</div>${trend||""}</div>`;
-  const detail=(name,v,cls)=>`<div class="detail"><div class="kicker">${esc(name)}</div><div class="num ${cls}">${esc(v)}</div></div>`;
-  const side=(icon,name,val,cls,trend)=>`<div class="sidecard"><div class="kicker"><span class="glyph">${icon}</span> ${esc(name)}</div><div class="num ${cls}">${esc(val)}</div>${this.trend(trend,cls==="green"?"#2ee39b":"#ffb238")}</div>`;
-  const row=(a,b,c)=>`<div class="table-line"><span>${esc(a)}</span><span>${esc(b)}</span><strong>${esc(c)}</strong></div>`;
-  this.shadowRoot.innerHTML=`<style>${css}</style><main class="panel">
-   <div class="heading"><div class="logo"><div class="logo-mark"><b>PGE</b></div><div><div class="brand">PGE Net-Billing</div><div class="sub">PGE Obrót · Dystrybucja · RCE · G12</div></div></div><span class="pill">Prognoza lokalna · nie faktura PGE</span></div>
-   <div class="metrics top-metrics">
-    ${tile("Szacowana kwota rachunku",fmt(invoice,"zł"),"orange","▤",this.trend("invoice_forecast","#ff5966"))}
-    ${tile("Saldo depozytu prosumenckiego",fmt(dep,"zł"),"green","▣",this.gauge(dep)+`<div class="between"><span>Do rozliczenia</span><span>Saldo prognozowane</span></div>`)}
-    ${tile("Bilans energii",fmt(bal,"kWh"),color(bal),"♻",this.gauge(bal)+`<div class="between"><span>Pobrano: <strong>${esc(fmt(imp,"kWh"))}</strong></span><span>Oddano: <strong>${esc(fmt(exp,"kWh"))}</strong></span></div>`)}
+  const imp=this.import(),exp=this.val("export_kwh"),dep=this.val("deposit_estimate"),bal=this.balance(),inv=this.val("invoice_forecast");
+  const money=v=>fmt(v,"zł"),energy=v=>fmt(v,"kWh");
+  const monthDate=new Date();monthDate.setDate(1);monthDate.setMonth(monthDate.getMonth()+this._monthOffset);
+  const month=new Intl.DateTimeFormat("pl-PL",{month:"long",year:"numeric"}).format(monthDate);
+  const logo=`<svg class="pf-logo" viewBox="0 0 112 65" aria-label="PGE"><path d="M5 34 Q35 0 80 7" fill="none" stroke="#f8273c" stroke-width="6"/><path d="M80 7 Q98 12 108 23" fill="none" stroke="#ff8a18" stroke-width="6"/><text x="21" y="58" fill="#fff" font-size="42" font-style="italic" font-weight="900" font-family="Arial" letter-spacing="-5">PGE</text></svg>`;
+  const icon=(glyph,c)=>`<span class="pf-icon ${c}">${glyph}</span>`;
+  const hist=(key,c)=>this.trend(key,c);
+  const bar=v=>`<div class="pf-bar" style="--pct:${this.pct(v)}%"><i></i></div>`;
+  const top=(glyph,label,value,cls,body)=>`<div class="pf-box"><div class="pf-label">${icon(glyph,cls==="pf-green"?"green":cls==="pf-orange"?"orange":"blue")}<span>${label} ⓘ</span></div><div class="pf-center"><div class="pf-big ${cls}">${esc(value)}</div>${body}</div></div>`;
+  const small=(glyph,label,value,cls,history)=>`<div class="pf-box"><div class="pf-label">${icon(glyph,cls==="pf-green"?"green":cls==="pf-orange"?"orange":"blue")}<span>${label}</span></div><div class="pf-val ${cls}">${esc(value)}</div>${hist(history,cls==="pf-green"?"#16e69a":cls==="pf-blue"?"#278cff":"#ff4759")}</div>`;
+  const side=(glyph,label,value,cls,history)=>`<div class="pf-box">${icon(glyph,cls==="pf-green"?"green":cls==="pf-orange"?"orange":"blue")}<div><div class="pf-muted">${label}</div><div class="pf-val ${cls}">${esc(value)}</div>${hist(history,cls==="pf-green"?"#16e69a":"#ffad26")}</div></div>`;
+  const td=(...cells)=>`<tr>${cells.map((v,i)=>`<td>${esc(v)}</td>`).join("")}</tr>`;
+  const graph=()=>{
+    const a=(this._history.import_s1||[]),b=(this._history.import_s2||[]),c=(this._history.export_kwh||[]);
+    if(a.length<2&&c.length<2)return '<text x="345" y="97" text-anchor="middle" fill="#7595a9" font-size="17">Brak historii</text>';
+    const dif=arr=>arr.slice(-15).map((v,i,x)=>i?Math.max(0,v-x[i-1]):0).slice(1);
+    const ai=dif(a),bi=dif(b),ci=dif(c),n=Math.max(ai.length,bi.length,ci.length),values=Array.from({length:n},(_,i)=>({buy:(ai[i]||0)+(bi[i]||0),sell:ci[i]||0}));
+    const max=Math.max(1,...values.flatMap(x=>[x.buy,x.sell]));
+    return values.map((v,i)=>{const x=28+i*(640/Math.max(1,n)),h1=v.buy/max*72,h2=v.sell/max*72;return `<rect x="${x}" y="${93-h1}" width="22" height="${h1}" rx="1" fill="#ffa51f"/><rect x="${x}" y="96" width="22" height="${h2}" rx="1" fill="#0fcf8c"/>`;}).join("");
+  };
+  this.shadowRoot.innerHTML=`<style>${css}</style><main class="pge-full">
+  <div class="pf-head"><div class="pf-brand">${logo}<div><strong>PGE Net-Billing</strong><div class="pf-sub">PGE Obrót · Dystrybucja · RCE · G12</div></div></div><div class="pf-date"><div class="pf-date-row"><span>▣ &nbsp;${esc(month)}</span><span><button class="prev" aria-label="Poprzedni miesiąc">‹</button><button class="next" aria-label="Następny miesiąc">›</button></span></div><div class="pf-updated"><i></i>Odczyty z Home Assistant · na żywo</div></div></div>
+  <div class="pf-grid"><div class="pf-main">
+   <div class="pf-top">
+    ${top("▤","Szacowana kwota rachunku",money(inv),"pf-orange",`<div class="pf-muted">Prognoza bieżącego miesiąca</div><div style="margin-top:21px">${hist("invoice_forecast","#ff4858")}</div>`)}
+    ${top("▣","Saldo depozytu prosumenckiego",money(dep),"pf-green",`<div class="pf-muted">Dostępne środki do rozliczenia</div>${bar(dep)}<div class="pf-between"><span>–500 zł<br>(do dopłaty)</span><span>+500 zł<br>(nadwyżka)</span></div>`)}
+    ${top("♧","Bilans energii",energy(bal),bal!==null&&bal<0?"pf-red":"pf-green",`<div class="pf-muted">Oddano minus pobrano</div>${bar(bal)}<div class="pf-between"><span>Pobrano<br><strong class="pf-orange">${esc(energy(imp))}</strong></span><span style="text-align:right">Oddano<br><strong class="pf-green">${esc(energy(exp))}</strong></span></div>`)}
    </div>
-   <div class="dashboard"><div class="dashboard-left">
-    <div class="section"><div class="heading"><h3>Przepływy energii · ostatnie 14 dni</h3><div class="legend"><span><i class="dot"></i>Pobór</span><span><i class="dot green-dot"></i>Oddanie</span></div></div>
-      <svg class="chart" viewBox="0 0 700 200" preserveAspectRatio="none"><line x1="0" y1="100" x2="700" y2="100" stroke="#315268" stroke-width="1"/><g transform="translate(10,10) scale(3,2.5)">${spark(this._history.import_s1||[],"#ffad36")}</g><g transform="translate(10,110) scale(3,2.5)">${spark(this._history.export_kwh||[],"#28db91")}</g></svg>
-      <div class="note">Historia stanów liczników z Home Assistant. Dane i wykresy pojawią się po zgromadzeniu historii.</div>
-    </div>
-   </div><div class="dashboard-right">
-     ${side("⚡","Pobór z sieci",fmt(imp,"kWh"),"orange","import_s1")}
-     ${side("↗","Oddanie do sieci",fmt(exp,"kWh"),"green","export_kwh")}
-     ${side("▤","Wartość sprzedaży RCE",fmt(this.val("export_value"),"zł"),"blue","deposit_estimate")}
-   </div></div>
-   <div class="details">
-    ${detail("Koszt zakupu energii",fmt(this.val("energy_cost"),"zł"),"orange")}
-    ${detail("Wartość oddanej energii",fmt(this.val("export_value"),"zł"),"green")}
-    ${detail("Aktualna cena RCE",fmt(this.val("rce_current"),"zł/kWh"),"blue")}
-    ${detail("Taryfa dystrybucji","G12","blue")}
+   <div class="pf-middle"><div class="pf-box pf-chartbox"><div class="pf-charthead"><h3>Przepływy energii <span class="pf-muted">(ostatnie 14 dni)</span></h3><span class="pf-legend"><span class="pf-orange">●</span> Pobór z sieci &nbsp; <span class="pf-green">●</span> Oddanie do sieci</span></div><svg class="pf-flow" viewBox="0 0 700 185" preserveAspectRatio="none"><g stroke="#1a3647" stroke-width="1"><path d="M15 40H690 M15 95H690 M15 150H690"/></g>${graph()}</svg></div>
+   <div class="pf-stack">${side("ϟ","Pobór z sieci",energy(imp),"pf-orange","import_s1")}${side("↑","Oddanie do sieci",energy(exp),"pf-green","export_kwh")}${side("▤","Wartość sprzedaży (RCE)",money(this.val("export_value")),"pf-blue","deposit_estimate")}</div></div>
+   <div class="pf-bottomtiles">
+    ${small("🛒","Koszt zakupu energii",money(this.val("energy_cost")),"pf-orange","invoice_forecast")}
+    ${small("↗","Wartość oddanej energii",money(this.val("export_value")),"pf-green","deposit_estimate")}
+    ${small("▥","Aktualna cena RCE",fmt(this.val("rce_current"),"zł/kWh"),"pf-blue","deposit_estimate")}
+    <div class="pf-box"><div class="pf-label">${icon("◷","blue")}<span>Taryfa dystrybucji</span></div><div class="pf-val">G12</div><div class="pf-muted" style="margin-top:12px">Strefa zależna od harmonogramu</div></div>
    </div>
-   <div class="bottom-tables" style="margin-top:13px">
-    <div class="section"><h3>Bilans energii</h3><div class="table-head"><span>Okres</span><span>Pobrano</span><span>Oddano</span></div>${row("Od uruchomienia",fmt(imp,"kWh"),fmt(exp,"kWh"))}${row("Bilans", "Eksport − import",fmt(bal,"kWh"))}</div>
-    <div class="section"><h3>Rozliczenia finansowe</h3><div class="table-head"><span>Pozycja</span><span>Rodzaj</span><span>Wartość</span></div>${row("Zakup energii","Netto",fmt(this.val("energy_cost"),"zł"))}${row("Sprzedaż RCE","Szacunek",fmt(this.val("export_value"),"zł"))}${row("Depozyt","Prognoza",fmt(dep,"zł"))}${row("Rachunek","Prognoza",fmt(invoice,"zł"))}</div>
-   </div><p class="note">Wartości są szacunkowe; bilans kWh nie jest depozytem w zł. Brak historii nie oznacza braku bieżących odczytów.</p>
-  </main>`;
+   <div class="pf-tables">
+    <div class="pf-box"><h3>Bilans energii</h3><table><thead><tr><th>Okres</th><th>Pobrano</th><th>Oddano</th></tr></thead><tbody>${td("Od uruchomienia",energy(imp),energy(exp))}${td("Bilans kWh","",energy(bal))}</tbody></table><div class="pf-note">Podział na dzień/tydzień/miesiąc wymaga danych historycznych.</div></div>
+    <div class="pf-box"><h3>Rozliczenia finansowe</h3><table><thead><tr><th>Pozycja</th><th>Rodzaj</th><th>Wartość</th></tr></thead><tbody>${td("Zakup energii","Netto",money(this.val("energy_cost")))}${td("Sprzedaż (RCE)","Szacunek",money(this.val("export_value")))}${td("Depozyt","Prognoza",money(dep))}${td("Rachunek","Prognoza",money(inv))}</tbody></table></div>
+   </div>
+  </div><aside class="pf-aside"><h3>Mały kafelek do Twoich kart</h3>
+   <div class="pf-box pf-feature"><div class="pf-brand">${logo}<div>PGE Net-Billing</div></div><div class="pf-big pf-green" style="text-align:center">${esc(money(dep))}</div><div class="pf-muted" style="text-align:center">Saldo depozytu</div>${bar(dep)}<div class="pf-between"><span class="pf-orange">${esc(money(inv))}<br>Rachunek</span><span class="pf-green" style="text-align:right">${esc(energy(bal))}<br>Bilans energii</span></div></div>
+   <div class="pf-box pf-smallcard">${icon("▤","orange")}<div><div class="pf-val pf-orange">${esc(money(inv))}</div><div class="pf-muted">Rachunek</div>${hist("invoice_forecast","#ff4b57")}</div></div>
+   <div class="pf-box pf-smallcard">${icon("♧","green")}<div><div class="pf-val pf-green">${esc(energy(bal))}</div><div class="pf-muted">Bilans energii</div>${hist("export_kwh","#16e69a")}</div></div>
+   <div class="pf-box pf-smallcard">${icon("▣","blue")}<div><div class="pf-val pf-green">${esc(money(dep))}</div><div class="pf-muted">Saldo depozytu</div>${hist("deposit_estimate","#16e69a")}</div></div>
+   <div class="pf-box"><div class="pf-brand">${logo}<div>PGE Net-Billing</div></div><div class="pf-between"><span>Pobrano<br><strong class="pf-orange">${esc(energy(imp))}</strong></span><span>Oddano<br><strong class="pf-green">${esc(energy(exp))}</strong></span></div>${bar(bal)}<div class="pf-between"><strong class="pf-green">${esc(energy(bal))}</strong><strong class="pf-blue">${esc(money(dep))}</strong></div></div>
+  </aside></div><div class="pf-note">Kwoty są prognozą lokalną, nie fakturą PGE. Miesiąc w nagłówku jest etykietą widoku; dane finansowe pozostają bieżące.</div></main>`;
+  this.shadowRoot.querySelector(".prev")?.addEventListener("click",()=>{this._monthOffset--;this.draw();});
+  this.shadowRoot.querySelector(".next")?.addEventListener("click",()=>{this._monthOffset++;this.draw();});
  }
 }
 if(!customElements.get("pge-net-billing-card"))customElements.define("pge-net-billing-card",PGECompactCard);
