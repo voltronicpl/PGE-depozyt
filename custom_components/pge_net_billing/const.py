@@ -1,5 +1,5 @@
 DOMAIN = "pge_net_billing"
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 DEFAULTS = {
     "start_date": "2026-11-01", "initial_deposit": 0.0,
     "buy_s1": 0.56489, "buy_s2": 0.37303,
