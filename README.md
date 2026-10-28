@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.2.2
+# PGE Net-Billing v1.2.3
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -23,9 +23,14 @@ Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać 
 - Karty Lovelace (Dodaj kartę → szukaj „PGE Net-Billing”):
   - `custom:pge-net-billing-card` – kafelek 3-kolumnowy: Rachunek / Saldo / Bilans z wykresami,
   - `custom:pge-net-billing-feature-card`, `-invoice-card`, `-balance-card`, `-deposit-card`, `-summary-card`.
-- Opcja `logo: /local/twoje-logo.png` (karta i panel) – domyślnie neutralna ikona.
+- Opcja `logo: /local/twoje-logo.png` (karta i panel) – domyślnie logo PGE.
 - Encje wyszukiwane po `translation_key` (bez zgadywania po nazwach), ręczne `entities:` dalej działa.
 - Backend: `state_class` dla kwot (statystyki), atrybuty `months`, `tariff` (strefa G12 i cena brutto) i `today` (RCE z dziś).
+
+## Nowe w v1.2.3
+- Logo PGE jako domyślne na kartach i w panelu (plik `frontend/pge-logo.svg`); nadal można ustawić własne logo przez `logo:`.
+- Aktualizacja przez HACS: odśwież repozytorium i pobierz ponownie integrację, a następnie uruchom ponownie Home Assistant.
+- Bez zmian w układzie, funkcjach i obliczeniach.
 
 ## Ograniczenia
 To nadal **prognozy, nie oficjalna faktura**. Stawki są historyczne i niezweryfikowane dla listopada 2026. Bilans kWh to różnica eksportu i importu z okresu działania integracji, nie stan magazynu energii. Saldo depozytu nie jest saldem rachunku bankowego. Wykresy korzystają z Recorder i mogą być puste. Karta i panel nie były jeszcze testowane end-to-end na rzeczywistej instalacji HA. Rozliczenia i ograniczenia beta pozostają bez zmian.
