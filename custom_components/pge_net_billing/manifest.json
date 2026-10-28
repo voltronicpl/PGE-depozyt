@@ -1,0 +1,11 @@
+{
+  "domain": "pge_net_billing",
+  "name": "PGE Net-Billing (prognozy)",
+  "version": "1.0.0-beta.1",
+  "documentation": "https://www.home-assistant.io/integrations/",
+  "requirements": [],
+  "dependencies": [],
+  "codeowners": [],
+  "config_flow": true,
+  "iot_class": "local_polling"
+}
