@@ -9,7 +9,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from .const import DEFAULTS
 from .pse import fetch_day, WARSAW
-from .settlement import zone, month_key, settle_months, money
+from .settlement import zone, month_key, settle_months, money, add_months
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -198,7 +198,12 @@ class PGELedger:
         if not settlements:
             return 0.
         current = settlements[max(settlements)]
-        if kind == 'deposit_estimate': return current['deposit_balance']
+        if kind in ('deposit_estimate', 'deposit_available'): return current['deposit_available']
+        if kind == 'deposit_pending': return current['deposit_pending']
+        if kind == 'deposit_next_month': return current['deposit_next']
+        if kind == 'deposit_previous_month':
+            prev = settlements.get(add_months(date.fromisoformat(max(settlements) + '-01'), -1).strftime('%Y-%m'))
+            return prev['deposit_available'] if prev else None
         if kind == 'deposit_used': return money(sum(x['deposit_used'] for x in settlements.values()))
         if kind == 'deposit_expired': return money(sum(x['deposit_expired'] for x in settlements.values()))
         if kind == 'invoice_forecast': return current['invoice']

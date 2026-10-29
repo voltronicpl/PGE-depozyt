@@ -26,8 +26,10 @@ def add_months(day, count):
 def settle_months(months, initial_deposit=0, opening_month=None):
     """Forecast FIFO monthly credits. No invented refund; expired funds recorded separately.
 
-    Monthly credit is applied only from the next month after export. Credits
-    expire 12 months after their credit month. The statutory refund cap and
+    Export of month M is booked on the prosumer account in M+1 and can pay
+    energy (not distribution/fixed fees) for 12 months: M+1 .. M+12, oldest
+    first. Per month we report what is usable now, what is being accrued this
+    month and what will be usable from next month. The statutory refund cap and
     actual supplier booking may differ; report as forecast only.
     """
     credits = []
@@ -56,16 +58,27 @@ def settle_months(months, initial_deposit=0, opening_month=None):
             remaining = money(remaining - part)
             used = money(used + part)
         credits = [c for c in credits if c['amount'] > 0.001]
+        available = sum(c['amount'] for c in credits if c['origin'] != month)
         export_credit = money(record.get('export_credit', 0))
         if export_credit > 0:
             credits.append({'amount': export_credit, 'origin': month,
-                            'expires': add_months(current, 12).isoformat()})
+                            'expires': add_months(current, 13).isoformat()})
+        nxt = add_months(current, 1)
+        expiring_next = money(sum(c['amount'] for c in credits
+                                  if c['expires'] is not None and date.fromisoformat(c['expires']) <= nxt))
         distribution = money(record.get('distribution', 0) * (1 + record.get('vat', .23)))
         fixed = money(record.get('fixed', 0) * (1 + record.get('vat', .23)))
         output[month] = {
             'energy_gross': energy_gross, 'deposit_used': used,
             'deposit_added': export_credit, 'deposit_expired': money(expired),
-            'deposit_balance': money(sum(c['amount'] for c in credits)),
+            # usable right now (booked earlier, after this month's energy so far)
+            'deposit_available': money(available),
+            # accrued from this month's export, booked next month
+            'deposit_pending': export_credit,
+            # usable from the 1st of next month
+            'deposit_next': money(sum(c['amount'] for c in credits) - expiring_next),
+            'deposit_expiring_next': expiring_next,
+            'deposit_balance': money(available),  # backwards compatibility
             'distribution_gross': distribution, 'fixed_gross': fixed,
             'invoice': money(remaining + distribution + fixed),
         }

@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.2.2 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.3.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.2.3";
+const VERSION = "1.3.0";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -132,7 +132,15 @@ function buildModel(hass, ids, raw, offset) {
 
   const invoice = isNum(months[selK]?.invoice) ? months[selK].invoice : (isCurrent ? val("invoice_forecast") : null);
   const invoicePrev = months[prevK]?.invoice;
-  const deposit = isNum(months[selK]?.deposit_balance) ? months[selK].deposit_balance : (isCurrent ? val("deposit_estimate") : null);
+  // Deposit (see settlement.py): available now / accrued this month / from next month / end of previous month
+  const ms = months[selK] || {}, mp = months[prevK] || {};
+  const pick2 = (o, a, b) => isNum(o[a]) ? Number(o[a]) : isNum(o[b]) ? Number(o[b]) : null;
+  const deposit = pick2(ms, "deposit_available", "deposit_balance") ?? (isCurrent ? val("deposit_estimate") : null);
+  const dep = {
+    prev: pick2(mp, "deposit_available", "deposit_balance"), prevUsed: pick2(mp, "deposit_used"), prevAdded: pick2(mp, "deposit_added"),
+    now: deposit, used: pick2(ms, "deposit_used"), pending: pick2(ms, "deposit_pending", "deposit_added"),
+    next: pick2(ms, "deposit_next"), expiring: pick2(ms, "deposit_expiring_next"),
+  };
 
   const rce = st("rce_current");
   const rceToday = (rce?.attributes?.today || []).map(x => Number(x[1])).filter(isNum);
@@ -141,7 +149,7 @@ function buildModel(hass, ids, raw, offset) {
 
   return {
     sel, prevD, isCurrent, hasStats, months, tariff, vat,
-    invoice, invoicePrev, deposit, month, prev, periods, flow,
+    invoice, invoicePrev, deposit, dep, month, prev, periods, flow,
     spark: {
       invoice: series(30, r => r.invoice_forecast).filter(x => x.d >= sel).map(x => x.v).filter(isNum).map(Number), deposit: s30(r => r.deposit_estimate),
       imp: s30(imp), exp: s30(r => r.export_kwh), sell: s30(r => r.export_value), cost: s30(r => r.energy_cost),
@@ -186,10 +194,10 @@ function delta(cur, prev, upIsBad, plus = true) {
 }
 function logo(config, size = "lg") {
   if (config?.logo) return `<img class="logo logo-${size}" src="${esc(config.logo)}" alt="">`;
-  return `<img class="logo logo-${size}" src="/pge_net_billing_static/pge-logo.svg?v=${VERSION}" alt="PGE">`;
+  return `<span class="logo logo-${size} logo-badge"><ha-icon icon="mdi:transmission-tower"></ha-icon></span>`;
 }
 function flowChart(flow) {
-  const W = 680, H = 178, L = 34, R = 8, T = 20, B = 22;
+  const W = 680, H = 160, L = 34, R = 8, T = 18, B = 22;
   const vals = flow.flatMap(x => [x.v?.imp, x.v?.exp]).filter(isNum).map(Number);
   if (!vals.length) return `<div class="nohist big">Brak historii dziennej z Recordera – wykres pojawi się po pierwszych pełnych dobach.</div>`;
   const raw = Math.max(1, ...vals);
@@ -248,6 +256,11 @@ const TILES = {
   },
 };
 
+function depCard(tone, kicker, title, value, rows, cls, tip) {
+  return `<div class="dep-card ${cls}" title="${esc(tip)}"><div class="dep-top"><span class="ic ic-${tone}"><ha-icon icon="mdi:calendar-month"></ha-icon></span><div><div class="dep-kicker">${esc(kicker)}</div><div class="dep-title">${esc(title)}</div><div class="dep-val ${isNum(value) && value < 0 ? "t-red" : "t-green"}">${zl(value, true)}</div></div></div>
+    ${rows.map(([l, v, c]) => `<div class="dep-line"><span>${esc(l)}</span><b class="${c}">${esc(v)}</b></div>`).join("")}</div>`;
+}
+
 /* ---------- styles ---------- */
 const CSS = `
 :host{display:block;container-type:inline-size;--pge-font:var(--paper-font-body1_-_font-family,Roboto),Roboto,"Segoe UI",Arial,sans-serif;--bg:#06111b;--card1:#0c1f2e;--card2:#081826;--line:#14293a;--txt:#eaf2f9;--mut:#9db2c3;--mut2:#c9d7e2;--o:#ffad2e;--g:#18e08e;--b:#3b8cff;--r:#ff4757;color:var(--txt);font-family:var(--pge-font)}
@@ -272,7 +285,7 @@ const CSS = `
 .t-head{display:flex;align-items:center;gap:12px}.t-title{font-size:15px;font-weight:600;flex:1}.chev{width:22px;height:22px;color:var(--mut)}
 .t-feature .t-center{text-align:center;margin-top:4px}.v-xl{font-size:28px;font-weight:800;letter-spacing:-.4px}.v-lg{font-size:25px;font-weight:800;letter-spacing:-.3px}.v-md{font-size:19px;font-weight:800;letter-spacing:-.2px}
 .split{display:flex;justify-content:space-between;gap:10px;align-items:flex-end}.split>div{min-width:0}
-.t-mini{display:flex;align-items:flex-start;gap:16px;min-height:126px}.t-mini .t-body{flex:1;min-width:0;padding-top:4px;position:relative;z-index:1}.t-mini .muted{margin-top:6px;font-size:14px}.t-mini .t-spark{position:absolute;right:14px;bottom:12px;width:36%}.t-foot .t-spark{flex:0 0 36%;align-self:flex-end}.v-lg,.v-md,.v-xl{white-space:nowrap}
+.t-mini{display:flex;align-items:flex-start;gap:16px;min-height:126px}.t-mini .t-body{flex:1;min-width:0;padding-top:4px;position:relative;z-index:1}.t-mini .muted{margin-top:6px;font-size:14px}.t-mini .t-spark{position:absolute;right:14px;bottom:12px;width:36%}.t-foot .t-spark{flex:0 0 30%;align-self:flex-end}.v-lg,.v-md,.v-xl{white-space:nowrap}
 .t-summary .split{margin-top:12px}.t-summary .bar{margin:14px 0 6px}.t-foot{display:flex;align-items:center;gap:12px;margin-top:16px}.t-foot .t-body{flex:1;min-width:0;white-space:nowrap}
 /* Compact 3-column card – sizes measured from the 396x161 px mockup (Roboto, as in HA) */
 .t-compact{padding:14px 13px 0 17px;height:161px;border-radius:14px;border:1px solid #1b2e3c;background:linear-gradient(160deg,#0c1d2a 0%,#0a1824 55%,#081520 100%);font-family:var(--pge-font)}
@@ -301,21 +314,31 @@ const CSS = `
 .nav{all:unset;cursor:pointer;width:26px;height:26px;color:var(--mut2);border-radius:6px}.nav:hover{background:#163246}.nav[disabled]{opacity:.25;cursor:default;background:none}
 .pf-upd{font-size:13px;color:var(--mut2);margin-top:8px;display:flex;align-items:center;gap:8px}.pf-upd i{width:9px;height:9px;border-radius:50%;background:var(--g);box-shadow:0 0 6px var(--g)}.pf-upd i.stale{background:#e2a12c;box-shadow:none}
 .top{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
-.top .box{padding:16px 16px 14px;min-height:220px;display:flex;flex-direction:column}
+.top .box{padding:14px 16px 12px;min-height:188px;display:flex;flex-direction:column}
 .k-head{display:flex;align-items:flex-start;gap:16px}.k-head .ic{width:54px;height:54px;padding:11px;border-radius:14px}.k-head .ic svg{width:32px;height:32px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.k-label{font-size:13px;white-space:nowrap;color:var(--mut2);display:flex;align-items:center;gap:6px;padding-top:6px}.info{width:17px;height:17px;color:var(--mut);cursor:help}
 .k-val{font-size:clamp(26px,2.6vw,36px);font-weight:800;letter-spacing:-.6px;margin-top:6px;white-space:nowrap}.k-sub{color:var(--mut2);font-size:14px;margin-top:4px}
-.k-bottom{display:flex;align-items:flex-end;gap:8px;margin-top:auto}.k-bottom>div:first-child{flex:1;min-width:0}.k-bottom .spark-wrap{flex:0 0 46%}
+.k-bottom{display:flex;align-items:flex-end;gap:8px;margin-top:auto}.k-bottom>div:first-child{flex:1;min-width:0;white-space:nowrap}.k-bottom .spark-wrap{flex:0 0 40%}
 .k-ends{display:flex;justify-content:space-between;font-size:14px;font-weight:600}.k-ends small{display:block;font-weight:400;color:var(--mut);font-size:12px}
+.dep{margin-top:13px;padding:14px 14px 12px}.dep h3{margin-bottom:12px}
+.dep-row{display:grid;grid-template-columns:1fr 26px 1fr 26px 1fr;align-items:stretch;gap:6px}
+.dep-arrow{display:grid;place-items:center;color:var(--mut2)}.dep-arrow ha-icon{width:20px;height:20px}
+.dep-card{border:1px solid #17304a;border-radius:12px;padding:12px 16px 10px;background:linear-gradient(150deg,#0d2131,#0a1a27);min-width:0}
+.dep-card.dep-cur{border:1.5px solid #3d7fd6;background:linear-gradient(150deg,#10284a,#0b1c33);box-shadow:0 0 18px #2f6fd033}
+.dep-top{display:flex;gap:14px;align-items:flex-start;margin-bottom:6px}.dep-top .ic{width:46px;height:46px;padding:10px;border-radius:12px}
+.ic-indigo{color:#7f8cff;background:linear-gradient(145deg,#26286b,#1a1c4d)}
+.dep-kicker{font-size:12px;color:var(--mut2)}.dep-title{font-size:14.5px;font-weight:700;margin-top:3px}.dep-val{font-size:22px;font-weight:800;margin-top:6px;letter-spacing:-.3px;white-space:nowrap}
+.dep-line{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--mut2);margin-top:6px;white-space:nowrap}.dep-line b{color:var(--txt);font-weight:600}
+@media(max-width:820px){.dep-row{grid-template-columns:1fr}.dep-arrow{transform:rotate(90deg);height:20px}}
 .mid{display:grid;grid-template-columns:minmax(0,1fr) 258px;gap:13px;margin-top:13px}
 .chart{padding:16px 16px 8px}.chart-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 h3{margin:0;font-size:16px;font-weight:700}h3 span{font-weight:400;color:var(--mut2)}.legend{font-size:13px;color:var(--mut2);display:flex;gap:16px}.legend b{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
 .flow{width:100%;height:auto;display:block;margin-top:8px}.flow text{fill:#c3d1dc;font-size:11px}.flow .unit{fill:#c3d1dc}.flow .grid{stroke:#173044;stroke-width:1}.flow .zero{stroke:#2b5470;stroke-width:1.2}
 .stack{display:grid;gap:12px;grid-auto-rows:1fr}.stack .box{display:flex;align-items:center;gap:14px;padding:12px 14px}.stack .s-body{flex:1;min-width:0;white-space:nowrap}.stack .s-body .muted2{font-size:12.5px}.stack .s-val{font-size:16px;font-weight:700;margin-top:3px;white-space:nowrap}.stack .spark-wrap{flex:0 0 64px}.stack .box{gap:10px;padding:10px 12px}
-.bot{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-top:13px}.bot .box{padding:14px 14px 10px;min-height:153px;display:flex;gap:14px}.bot .ic{width:36px;height:36px;padding:5px}.bot .b-body{flex:1;min-width:0;display:flex;flex-direction:column}
+.bot{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-top:13px}.bot .box{padding:12px 14px 8px;min-height:110px;display:flex;gap:14px}.bot .ic{width:36px;height:36px;padding:5px}.bot .b-body{flex:1;min-width:0;display:flex;flex-direction:column}
 .b-val{font-size:clamp(19px,1.7vw,25px);font-weight:700;margin-top:6px;white-space:nowrap}.b-note{font-size:13px;color:var(--mut2)}.bot .delta{font-size:15px}.b-foot{display:flex;align-items:flex-end;gap:6px;margin-top:8px;flex:1;position:relative;min-height:48px}.b-foot>div:first-child{align-self:flex-start}.b-foot>div:first-child{flex:1;position:relative;z-index:1}.b-foot .b-note{white-space:nowrap;font-size:12px}.b-foot .spark-wrap{position:absolute;right:0;bottom:0;width:42%}
 .zone{display:flex;align-items:center;gap:10px;margin-top:auto}.zone .ic{width:34px;height:34px;padding:4px}
 .tables{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:13px}.tables .box{padding:16px 16px 6px}
-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}th{font-weight:400;color:var(--mut2);text-align:right;padding:9px 6px;background:#0f2536}td{text-align:right;padding:9px 6px;border-bottom:1px solid #132b3c;white-space:nowrap}tr:last-child td{border-bottom:0}th:first-child,td:first-child{text-align:left}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}th{font-weight:400;color:var(--mut2);text-align:right;padding:6px 6px;background:#0f2536}td{text-align:right;padding:6px 6px;border-bottom:1px solid #132b3c;white-space:nowrap}tr:last-child td{border-bottom:0}th:first-child,td:first-child{text-align:left}
 .aside h2{font-size:19px;font-weight:500;margin:6px 0 16px}.aside .tile{margin-bottom:14px}
 .foot{color:#6f8ca0;font-size:11px;margin-top:14px;max-width:1700px;margin-left:auto;margin-right:auto}
 .warn{background:#2a1d0c;border:1px solid #5a3d12;color:#ffcf80;border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px}
@@ -423,6 +446,17 @@ class PGEPanel extends PGEBase {
     <div class="box"><div class="k-head"><span class="ic ic-green">${CICON.leaf}</span><div><div class="k-label">Bilans energii ${info("Oddano minus pobrano w wybranym miesiącu (statystyki Recordera).")}</div>
       <div class="k-val ${isNum(m.month.bal) && m.month.bal < 0 ? "t-red" : "t-green"}">${kwh(m.month.bal, true)}</div><div class="k-sub">${!isNum(m.month.bal) ? "Brak danych" : m.month.bal >= 0 ? "Więcej oddano niż pobrano" : "Więcej pobrano niż oddano"}</div></div></div>
       <div style="margin-top:auto">${bar(energyPct(m.month.imp, m.month.exp), "energy")}<div class="k-ends"><span>Pobrano<small class="t-orange" style="font-size:15px;font-weight:700;color:var(--o)">${kwh(m.month.imp)}</small></span><span class="r">Oddano<small style="font-size:15px;font-weight:700;color:var(--g)">${kwh(m.month.exp)}</small></span></div></div></div>
+  </section>
+
+  <section class="box dep">
+    <h3>Depozyt prosumencki – rozliczenia miesięczne</h3>
+    <div class="dep-row">
+      ${depCard("blue", "Poprzedni miesiąc", monthName(m.prevD), m.dep.prev, [["Oddano do depozytu", kwh(m.prev.exp), ""], ["Wykorzystano z depozytu", zl(m.dep.prevUsed), ""]], "", "Saldo dostępne na koniec poprzedniego miesiąca")}
+      <span class="dep-arrow"><ha-icon icon="mdi:arrow-right"></ha-icon></span>
+      ${depCard("indigo", m.isCurrent ? "Obecny miesiąc" : "Wybrany miesiąc", monthName(m.sel), m.dep.now, [["Oddano do depozytu", kwh(m.month.exp), "t-blue2"], ["Wykorzystano z depozytu", zl(m.dep.used), ""]], "dep-cur", "Saldo dostępne dziś: zaksięgowane w poprzednich miesiącach minus zużyte na energię w tym miesiącu. Eksport z tego miesiąca wchodzi dopiero od 1-szego następnego.")}
+      <span class="dep-arrow"><ha-icon icon="mdi:arrow-right"></ha-icon></span>
+      ${depCard("green", "Następny miesiąc", monthName(monthStart(m.sel, 1)) + (m.isCurrent ? " (prognoza)" : ""), m.dep.next, [["Wpłynie z tego miesiąca", zl(m.dep.pending, true), ""], ["Wygasa z początkiem miesiąca", zl(m.dep.expiring), ""]], "", "Saldo na 1. dzień następnego miesiąca: dostępne dziś + depozyt naliczany w tym miesiącu − środki starsze niż 12 miesięcy")}
+    </div>
   </section>
 
   <section class="mid">

@@ -10,6 +10,10 @@ SENSORS = [
  ('export_value','Wartość eksportu (szacunek)','PLN'),
  ('unpriced_export_kwh','Eksport bez ceny RCE','kWh'),
  ('deposit_estimate','Saldo depozytu (prognoza)','PLN'),
+ ('deposit_available','Depozyt dostępny teraz','PLN'),
+ ('deposit_pending','Depozyt naliczany w tym miesiącu','PLN'),
+ ('deposit_next_month','Depozyt dostępny od przyszłego miesiąca','PLN'),
+ ('deposit_previous_month','Depozyt na koniec poprzedniego miesiąca','PLN'),
  ('deposit_added','Depozyt naliczony łącznie','PLN'),
  ('deposit_used','Depozyt wykorzystany łącznie','PLN'),
  ('deposit_expired','Depozyt wygasły łącznie','PLN'),
@@ -25,7 +29,7 @@ SENSORS = [
 # Running totals -> long-term statistics 'change' per day/week/month
 CUMULATIVE_PLN={'energy_cost','distribution_cost','export_value'}
 # Point-in-time values -> min/mean/max statistics for sparklines
-SNAPSHOT_PLN={'invoice_forecast','deposit_estimate','rce_current'}
+SNAPSHOT_PLN={'invoice_forecast','deposit_estimate','rce_current','deposit_available','deposit_next_month','deposit_previous_month','deposit_pending'}
 
 async def async_setup_entry(hass, entry, async_add_entities):
     ledger=hass.data[DOMAIN][entry.entry_id]
