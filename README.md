@@ -2,12 +2,6 @@
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
-## Nowości v1.4.0
-W panelu **Przepływ energii** dodano wybór dat Od/Do, strzałki przesuwania okresu, przełączniki Dzień / Tydzień / Miesiąc / Rok i przycisk Dzisiaj. Wykres korzysta z dziennych statystyk Recordera; pozostałe kafelki, układ oraz logo PGE pozostają bez zmian.
-
-## Automatyczna rejestracja zasobu Lovelace
-Po uruchomieniu integracja automatycznie rejestruje `/pge_net_billing_static/pge-net-billing.js?v=1.4.0` jako zasób **JavaScript module** w Home Assistant (tryb zasobów storage). Istniejący wpis jest aktualizowany bez duplikowania, a pozostałe zasoby są zachowane. Przy zasobach zarządzanych przez YAML wpis należy dodać ręcznie. Po aktualizacji uruchom ponownie Home Assistant i odśwież aplikację mobilną.
-
 ## Instalacja
 Skopiuj `custom_components/pge_net_billing` do `/config/custom_components/`, uruchom ponownie HA i skonfiguruj integrację przez Ustawienia → Urządzenia i usługi.
 
@@ -22,6 +16,13 @@ Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing 
 Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Nowe w v1.4.0 – wykres „Przepływ energii (wybrany okres)”
+- Zakres: Dzień (słupki godzinowe) / Tydzień / Miesiąc / Rok (słupki miesięczne), własny zakres Od–Do, strzałki ‹ › przesuwają okres, „Dzisiaj” wraca do bieżącego.
+- Najechanie na słupek: dymek z datą, poborem i oddaniem + kafelki pod wykresem pokazują ten słupek. Zjechanie: suma okresu i „Średnio dziennie”.
+- Kliknięcie słupka: dzień → godziny tego dnia, miesiąc (w widoku Rok) → dni tego miesiąca.
+- Bieżący dzień / godzina liczone do teraz (stan sensora − stan z końca poprzedniego okresu), nie tylko pełne godziny.
+- Kafle „Aktualna cena RCE” i „Taryfa dystrybucji” usunięte z panelu (jak na makiecie) – encje zostają.
 
 ## Nowe w v1.3.0 – depozyt jak w PGE
 Eksport z miesiąca M PGE księguje w M+1; depozyt pokrywa tylko energię (nie dystrybucję i opłaty stałe), ważny 12 miesięcy od zaksięgowania, FIFO.
