@@ -1,0 +1,46 @@
+name: Install PGE Net-Billing v1.3.0 from uploaded ZIP
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/install-v1.3.0.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Extract release without removing existing logo
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import json
+          archive = Path('pge_net_billing-1.3.0.zip')
+          assert archive.is_file(), 'Uploaded ZIP not found'
+          with ZipFile(archive) as z:
+              names = [n for n in z.namelist() if not n.endswith('/')]
+              assert all(n.startswith('custom_components/pge_net_billing/') or n in ('README.md', 'hacs.json') for n in names), names
+              assert 'custom_components/pge_net_billing/manifest.json' in names
+              manifest = json.loads(z.read('custom_components/pge_net_billing/manifest.json'))
+              assert manifest['version'] == '1.3.0', manifest['version']
+              for name in names:
+                  target = Path(name)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(z.read(name))
+          assert Path('custom_components/pge_net_billing/frontend/pge-logo.svg').is_file(), 'Existing logo missing'
+          print('Installed', len(names), 'files; retained existing logo')
+          PY
+      - name: Commit complete v1.3.0 release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md hacs.json custom_components/pge_net_billing
+          if ! git diff --cached --quiet; then
+            git commit -m "Release PGE Net-Billing v1.3.0 from uploaded ZIP"
+            git push
+          fi
