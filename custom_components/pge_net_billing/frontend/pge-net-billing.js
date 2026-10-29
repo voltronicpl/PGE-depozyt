@@ -50,15 +50,15 @@ function resolveEntities(hass, config) {
 }
 
 const statCache = new Map();
-async function loadStats(hass, ids, start, end) {
+async function loadStats(hass, ids, start, end, period = "day") {
   const list = STAT_KEYS.map(k => ids[k]).filter(Boolean);
   if (!list.length || !hass?.callWS) return null;
-  const key = list.join(",") + "|" + start.toISOString() + "|" + end.toISOString();
+  const key = period + "|" + list.join(",") + "|" + start.toISOString() + "|" + end.toISOString();
   const hit = statCache.get(key);
   if (hit && Date.now() - hit.t < 300000) return hit.p;
   const p = hass.callWS({
     type: "recorder/statistics_during_period", start_time: start.toISOString(), end_time: end.toISOString(),
-    statistic_ids: list, period: "day", types: ["change", "max", "mean"],
+    statistic_ids: list, period, types: ["change", "max", "mean", "state"],
   }).catch(e => { console.warn("PGE Net-Billing: statistics unavailable", e); return null; });
   statCache.set(key, { t: Date.now(), p });
   return p;
@@ -93,7 +93,17 @@ function buildModel(hass, ids, raw, offset) {
       (days[dk] ||= { date: new Date(d.getFullYear(), d.getMonth(), d.getDate()) })[k] = r[field];
     }
   };
-  for (const k of ["import_s1", "import_s2", "export_kwh", "energy_cost", "export_value"]) pick(k, "change");
+  const CUM = ["import_s1", "import_s2", "export_kwh", "energy_cost", "export_value"];
+  for (const k of CUM) pick(k, "change");
+  // today "up to now": live sensor state minus yesterday's closing state (daily stats only cover full hours)
+  if (isCurrent && raw) {
+    const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()), y0 = new Date(t0.getTime() - 864e5);
+    for (const k of CUM) {
+      const prevRow = (raw[ids[k]] || []).find(r => dayKey(new Date(typeof r.start === "number" ? r.start : Date.parse(r.start))) === dayKey(y0));
+      const cur = val(k);
+      if (prevRow && isNum(prevRow.state) && isNum(cur) && cur - prevRow.state >= 0) (days[dayKey(t0)] ||= { date: t0 })[k] = cur - prevRow.state;
+    }
+  }
   pick("invoice_forecast", "max");
   pick("deposit_estimate", "mean");
   const hasStats = Object.keys(days).length > 0;
@@ -127,7 +137,7 @@ function buildModel(hass, ids, raw, offset) {
     for (let i = n - 1; i >= 0; i--) { const d = new Date(lastDay); d.setDate(d.getDate() - i); const r = days[dayKey(d)]; out.push({ d, v: r ? f(r) : null }); }
     return out;
   };
-  const flow = series(14, r => ({ imp: imp(r), exp: r.export_kwh }));
+  const flow = series(14, r => ({ imp: imp(r), exp: r.export_kwh, cost: isNum(r.energy_cost) ? r.energy_cost * (1 + vat) : null, sell: r.export_value }));
   const s30 = f => series(30, f).map(x => x.v).filter(isNum).map(Number);
 
   const invoice = isNum(months[selK]?.invoice) ? months[selK].invoice : (isCurrent ? val("invoice_forecast") : null);
@@ -157,6 +167,7 @@ function buildModel(hass, ids, raw, offset) {
     },
     rce: val("rce_current"), rceToday, rceSlot,
     updated: updated.length ? new Date(Math.max(...updated)) : null,
+    todayV: (() => { const r = days[dayKey(today0)]; return isCurrent && r ? { imp: imp(r), exp: isNum(r.export_kwh) ? Number(r.export_kwh) : null, cost: isNum(r.energy_cost) ? r.energy_cost * (1 + vat) : null, sell: isNum(r.export_value) ? Number(r.export_value) : null } : null; })(),
     found: Object.values(ids).some(Boolean),
   };
 }
@@ -204,58 +215,14 @@ function flowChart(flow) {
   const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000].find(s => s * 3 >= raw) || Math.ceil(raw / 3);
   const top = step * 3, bottom = step * 2;
   const y = v => T + (top - v) / (top + bottom) * (H - T - B);
-  const n = flow.length, slot = (W - L - R) / Math.max(1, n), bw = Math.max(1, Math.min(18, slot * .5));
+  const n = flow.length, slot = (W - L - R) / n, bw = Math.min(18, slot * .5);
   let g = "";
   for (let v = -bottom; v <= top; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="${v === 0 ? "zero" : "grid"}"/><text x="${L - 7}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
   const bars = flow.map((f, i) => {
     const cx = L + slot * i + slot / 2, a = Number(f.v?.imp) || 0, e = Number(f.v?.exp) || 0;
-    return `<rect x="${cx - bw / 2}" y="${y(a)}" width="${bw}" height="${Math.max(0, y(0) - y(a))}" rx="2" fill="url(#gImp)"/><rect x="${cx - bw / 2}" y="${y(0) + 1}" width="${bw}" height="${Math.max(0, y(-e) - y(0))}" rx="2" fill="url(#gExp)"/><text x="${cx}" y="${H - 6}" text-anchor="middle">${n > 45 ? (i % Math.ceil(n / 12) ? "" : dayShort(f.d)) : dayShort(f.d)}</text>`;
+    return `<g class="day" data-i="${i}"><rect class="hit" x="${cx - slot / 2}" y="${T - 6}" width="${slot}" height="${H - T}" fill="transparent"/><rect x="${cx - bw / 2}" y="${y(a)}" width="${bw}" height="${Math.max(0, y(0) - y(a))}" rx="2" fill="url(#gImp)"/><rect x="${cx - bw / 2}" y="${y(0) + 1}" width="${bw}" height="${Math.max(0, y(-e) - y(0))}" rx="2" fill="url(#gExp)"/><text x="${cx}" y="${H - 6}" text-anchor="middle">${dayShort(f.d)}</text></g>`;
   }).join("");
   return `<svg class="flow" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"><defs><linearGradient id="gImp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb52e"/><stop offset="1" stop-color="#f08a14"/></linearGradient><linearGradient id="gExp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#16c97f"/><stop offset="1" stop-color="#2af0a0"/></linearGradient></defs><text x="${L - 30}" y="10" class="unit">kWh</text>${g}${bars}</svg>`;
-}
-
-/* ---------- independent energy-flow period selection ---------- */
-function flowDate(d) { return [d.getFullYear(), pad(d.getMonth() + 1), pad(d.getDate())].join("-"); }
-function flowFromDate(s) { const p = (s || "").split("-").map(Number); return p.length === 3 && p.every(Number.isFinite) ? new Date(p[0], p[1] - 1, p[2]) : null; }
-function flowPeriod(mode, base) {
-  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
-  let start, end;
-  if (mode === "day") { start = d; end = new Date(d); end.setDate(end.getDate() + 1); }
-  else if (mode === "week") { start = new Date(d); start.setDate(start.getDate() - (start.getDay() + 6) % 7); end = new Date(start); end.setDate(end.getDate() + 7); }
-  else if (mode === "year") { start = new Date(d.getFullYear(), 0, 1); end = new Date(d.getFullYear() + 1, 0, 1); }
-  else { start = new Date(d.getFullYear(), d.getMonth(), 1); end = new Date(d.getFullYear(), d.getMonth() + 1, 1); }
-  return { start, end };
-}
-function flowFromStatistics(raw, ids, start, end, mode) {
-  const daily = new Map();
-  for (const key of ["import_s1", "import_s2", "export_kwh"]) {
-    for (const item of raw?.[ids[key]] || []) {
-      const d = new Date(typeof item.start === "number" ? item.start : Date.parse(item.start));
-      if (!Number.isFinite(d.getTime()) || d < start || d >= end) continue;
-      const dk = flowDate(d);
-      const row = daily.get(dk) || { d: new Date(d.getFullYear(), d.getMonth(), d.getDate()), v: { imp: null, exp: null } };
-      const value = Number(item.change);
-      if (isNum(item.change)) {
-        if (key === "export_kwh") row.v.exp = (row.v.exp || 0) + value;
-        else row.v.imp = (row.v.imp || 0) + value;
-      }
-      daily.set(dk, row);
-    }
-  }
-  const output = [];
-  const cursor = new Date(start);
-  while (cursor < end && output.length < 370) {
-    const d = new Date(cursor);
-    const row = daily.get(flowDate(d));
-    output.push(row || { d, v: null });
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  if (mode !== "year") return output;
-  return Array.from({ length: 12 }, (_, month) => {
-    const rows = output.filter(x => x.d.getMonth() === month);
-    const total = key => rows.some(x => isNum(x.v?.[key])) ? rows.reduce((a, x) => a + (Number(x.v?.[key]) || 0), 0) : null;
-    return { d: new Date(start.getFullYear(), month, 1), v: { imp: total("imp"), exp: total("exp") } };
-  });
 }
 
 /* ---------- shared tiles (panel aside + Lovelace) ---------- */
@@ -348,9 +315,33 @@ const CSS = `
 .c-spark{position:absolute;bottom:1px;left:15px;right:10px}.c-cell:first-child .c-spark{left:45px;right:8px;height:26px}
 .c-spark .spark{height:34px!important}.c-cell:last-child .c-spark{right:0}.c-cell:first-child .c-spark .spark{height:26px!important}.c-spark .nohist{height:26px!important}
 @container (max-width:380px){.t-compact{height:auto;padding-bottom:8px}.c-grid{grid-template-columns:repeat(3,minmax(0,1fr));height:auto}.c-cell{padding-bottom:36px}.c-row{flex-direction:column;gap:6px}.c-ic{flex-basis:32px;width:32px;height:32px;padding:7px}.c-ic svg{width:18px;height:18px}.c-val{font-size:14px}.c-spark,.c-cell:first-child .c-spark{left:4px;right:6px}}
+/* Flow chart card */
+.fc{margin-top:13px;padding:16px 16px 14px}.fc-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.fc-ctrl{display:flex;align-items:center;gap:8px;margin:14px 0 6px;flex-wrap:wrap}
+.fc-btn{all:unset;box-sizing:border-box;cursor:pointer;height:38px;padding:0 12px;border-radius:9px;border:1px solid #1d3a54;background:#0c1f30;color:var(--txt);font-size:13px;display:inline-grid;place-items:center;white-space:nowrap}
+.fc-btn:hover{border-color:#3a77b8}.fc-btn.on{background:#2a8cff;border-color:#2a8cff;color:#fff;font-weight:600;box-shadow:0 0 14px #2a8cff55}.fc-btn[disabled]{opacity:.35;cursor:default}
+.fc-arrow{width:44px;padding:0;border-color:#2f6cb3;background:#0f2a49}.fc-arrow ha-icon{width:22px;height:22px}
+.fc-modes{display:flex;gap:8px}.fc-mode{min-width:64px}
+.fc-sep{width:1px;height:30px;background:#244056;margin:0 2px}
+.fc-date{display:flex;align-items:center;gap:10px;height:38px;padding:0 10px 0 6px;border:1px solid #2a4f70;border-radius:9px;background:#0c1f30;min-width:150px;flex:1 1 160px;max-width:185px}
+.fc-date .ic{width:28px;height:28px;padding:4px;border-radius:7px}.fc-date>span:not(.ic){display:flex;flex-direction:column;flex:1;min-width:0}.fc-date small{font-size:10.5px;color:var(--mut2);line-height:1}
+.fc-date input{all:unset;font:600 13.5px var(--pge-font);color:var(--txt);color-scheme:dark;width:100%}.fc-date input::-webkit-calendar-picker-indicator{display:none}
+.fc-x{all:unset;cursor:pointer;color:var(--mut2);font-size:18px;padding:0 4px}.fc-x:hover{color:#fff}
+.fc-plot{position:relative;margin-top:6px}.fc-svg{display:block;width:100%;height:auto}
+.fc-svg text{fill:#c3d1dc;font-size:14px}.fc-svg .unit{font-size:15px}.fc-svg .grid{stroke:#173044}.fc-svg .vgrid{stroke:#11273a;stroke-dasharray:3 4}.fc-svg .zero{stroke:#2b5470;stroke-width:1.2}
+.fc-svg .day{cursor:pointer}.fc-svg .day.fut{cursor:default}.fc-svg .day rect:not(.hit){transition:opacity .12s,filter .12s}.fc-svg.focus .day:not(.sel) rect:not(.hit){opacity:.45}.fc-svg .day.sel rect:not(.hit){filter:brightness(1.25)}
+.fc-svg .cursor{display:none;pointer-events:none}.fc-svg .cl{stroke:#e8f1f8;stroke-dasharray:4 4;stroke-width:1.2}.fc-svg .ci,.fc-svg .ce{fill:#0b1a27;stroke:#fff;stroke-width:2}
+.fc-tip{position:absolute;top:-6px;transform:translateX(-50%);background:#0d1c2a;border:1px solid #2b4459;border-radius:9px;padding:9px 12px;font-size:12.5px;pointer-events:none;box-shadow:0 8px 20px #0007;min-width:200px;z-index:2}
+.fc-tip .tt{font-weight:700;margin-bottom:5px}.fc-tip div{display:flex;align-items:center;gap:7px;margin-top:3px;white-space:nowrap}.fc-tip b{width:10px;height:10px;border-radius:50%;display:inline-block}.fc-tip span{margin-left:auto;padding-left:14px;font-weight:700}.fc-tip .hint{color:var(--mut);font-size:10.5px;margin-top:6px}
+.fc-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:10px}
+.fc-tile{border:1px solid #17304a;border-radius:12px;background:linear-gradient(150deg,#0d2131,#0a1a27);padding:12px 14px 10px;min-width:0}
+.fc-tile{display:grid;grid-template-columns:auto minmax(0,1fr) 42%;column-gap:10px}.fc-tile-top{display:contents}.fc-ic{width:38px;height:38px;padding:2px;grid-row:1}.fc-tile-txt{min-width:0;grid-row:1;grid-column:2/4}.fc-tile-txt .muted2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fc-val{font-size:clamp(17px,1.6vw,22px);font-weight:800;margin-top:3px;white-space:nowrap}.fc-spark{grid-column:3;grid-row:2;align-self:end}.fc-spark .spark{height:40px!important}
+.fc-avg{display:flex;flex-direction:column;margin-top:6px;grid-column:1/3;grid-row:2}.fc-avg b{font-size:14px;margin-top:2px}
+@media(max-width:1000px){.fc-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.fc-sep{display:none}}
+@media(max-width:600px){.fc-tiles{grid-template-columns:1fr}.fc-ctrl{display:grid;grid-template-columns:40px minmax(0,1fr) minmax(0,1fr) 40px;gap:6px}.fc-date{max-width:none;min-width:0;padding-right:4px}.fc-date .ic{display:none}.fc-arrow{width:40px}.fc-modes{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.fc-mode{min-width:0}.fc-today{grid-column:1/4}.fc-plot{overflow-x:auto}.fc-svg{min-width:680px}.fc-tip{position:fixed;top:auto;bottom:16px;left:50%!important}}
 /* Panel */
 .pf{min-height:100vh;background:radial-gradient(ellipse at 40% -10%,#0b2233 0%,var(--bg) 60%);padding:16px 17px 24px}
-.pf-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:27px;max-width:1700px;margin:0 auto}
+.pf-grid>*{min-width:0}.pf-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:27px;max-width:1700px;margin:0 auto}
 .pf-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px;min-height:74px}.pf-brand{display:flex;align-items:center;gap:16px}
 .pf-brand h1{font-size:27px;margin:0;font-weight:700;letter-spacing:-.4px}.pf-sub{color:var(--mut);font-size:13px;margin-top:4px}
 .pf-date{background:#0c1f2e;border:1px solid var(--line);border-radius:12px;padding:10px 14px;min-width:270px}
@@ -376,8 +367,7 @@ const CSS = `
 .mid{display:grid;grid-template-columns:minmax(0,1fr) 258px;gap:13px;margin-top:13px}
 .chart{padding:16px 16px 8px}.chart-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 h3{margin:0;font-size:16px;font-weight:700}h3 span{font-weight:400;color:var(--mut2)}.legend{font-size:13px;color:var(--mut2);display:flex;gap:16px}.legend b{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
-.flow-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0 10px}.flow-controls button,.flow-controls label{border:1px solid #245078;border-radius:9px;background:#0b2034;color:#eaf2f9;padding:9px 11px;font:inherit;font-size:12px}.flow-controls button{cursor:pointer}.flow-controls button:hover{border-color:#3b8cff}.flow-controls .flow-nav{font-size:17px;color:#7fb3ff}.flow-controls label{display:flex;align-items:center;gap:7px;color:#9db2c3}.flow-controls input{background:transparent;border:0;color:#eaf2f9;font:inherit;color-scheme:dark;max-width:135px}.flow-presets{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}.flow-controls .selected{background:#238bff;color:#fff;border-color:#238bff}
-.flow{width:100%;height:auto;display:block;margin-top:8px}.flow text{fill:#c3d1dc;font-size:11px}.flow .unit{fill:#c3d1dc}.flow .grid{stroke:#173044;stroke-width:1}.flow .zero{stroke:#2b5470;stroke-width:1.2}
+.flow{width:100%;height:auto;display:block;margin-top:8px}.flow .day{cursor:pointer}.flow .day rect:not(.hit){transition:opacity .12s}.flow.focus .day:not(.sel) rect:not(.hit){opacity:.3}.flow .day.sel text{fill:#fff;font-weight:700}.scope{color:var(--b);font-weight:500}.flow text{fill:#c3d1dc;font-size:11px}.flow .unit{fill:#c3d1dc}.flow .grid{stroke:#173044;stroke-width:1}.flow .zero{stroke:#2b5470;stroke-width:1.2}
 .stack{display:grid;gap:12px;grid-auto-rows:1fr}.stack .box{display:flex;align-items:center;gap:14px;padding:12px 14px}.stack .s-body{flex:1;min-width:0;white-space:nowrap}.stack .s-body .muted2{font-size:12.5px}.stack .s-val{font-size:16px;font-weight:700;margin-top:3px;white-space:nowrap}.stack .spark-wrap{flex:0 0 64px}.stack .box{gap:10px;padding:10px 12px}
 .bot{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-top:13px}.bot .box{padding:12px 14px 8px;min-height:110px;display:flex;gap:14px}.bot .ic{width:36px;height:36px;padding:5px}.bot .b-body{flex:1;min-width:0;display:flex;flex-direction:column}
 .b-val{font-size:clamp(19px,1.7vw,25px);font-weight:700;margin-top:6px;white-space:nowrap}.b-note{font-size:13px;color:var(--mut2)}.bot .delta{font-size:15px}.b-foot{display:flex;align-items:flex-end;gap:6px;margin-top:8px;flex:1;position:relative;min-height:48px}.b-foot>div:first-child{align-self:flex-start}.b-foot>div:first-child{flex:1;position:relative;z-index:1}.b-foot .b-note{white-space:nowrap;font-size:12px}.b-foot .spark-wrap{position:absolute;right:0;bottom:0;width:42%}
@@ -387,7 +377,7 @@ table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}th{fo
 .aside h2{font-size:19px;font-weight:500;margin:6px 0 16px}.aside .tile{margin-bottom:14px}
 .foot{color:#6f8ca0;font-size:11px;margin-top:14px;max-width:1700px;margin-left:auto;margin-right:auto}
 .warn{background:#2a1d0c;border:1px solid #5a3d12;color:#ffcf80;border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px}
-@media(max-width:1100px){.pf-grid{grid-template-columns:1fr}.aside{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}.aside h2{grid-column:1/-1;margin:0}.aside .tile{margin:0}}
+@media(max-width:1100px){.pf-grid{grid-template-columns:minmax(0,1fr)}.aside{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}.aside h2{grid-column:1/-1;margin:0}.aside .tile{margin:0}}
 @media(max-width:1000px){.bot{grid-template-columns:repeat(2,minmax(0,1fr))}.mid{grid-template-columns:1fr}.stack{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:820px){.pf{padding:12px}.top,.tables,.stack{grid-template-columns:1fr}.pf-head{flex-wrap:wrap}.pf-date{min-width:0;width:100%}.top .box{min-height:0}}
 @media(max-width:480px){.bot{grid-template-columns:1fr}.k-val{font-size:28px}.tables .box{overflow-x:auto}table{font-size:11.5px}td,th{padding:8px 3px}.flow{min-height:170px}.flow text{font-size:15px}}
@@ -455,24 +445,201 @@ for (const [tag, variant, name, description] of CARDS) {
 }
 
 /* ---------- full panel ---------- */
+/* ---------- flow chart card: period picker, hover tooltip, click = drill down ---------- */
+const CUM_KEYS = ["import_s1", "import_s2", "export_kwh", "energy_cost", "export_value"];
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const isoDate = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const fromIso = s => { const [y, m, d] = String(s).split("-").map(Number); return y && m && d ? new Date(y, m - 1, d) : null; };
+const MODES = [["day", "Dzień"], ["week", "Tydzień"], ["month", "Miesiąc"], ["year", "Rok"]];
+function periodFor(start, end) {
+  const days = Math.round((end - start) / 864e5);
+  return days <= 2 ? "hour" : days <= 92 ? "day" : "month";
+}
+function makeRange(mode, anchor, start, end) {
+  const a = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
+  if (mode === "day") { start = a; end = addDays(a, 1); }
+  else if (mode === "week") { start = addDays(a, -((a.getDay() + 6) % 7)); end = addDays(start, 7); }
+  else if (mode === "month") { start = new Date(a.getFullYear(), a.getMonth(), 1); end = new Date(a.getFullYear(), a.getMonth() + 1, 1); }
+  else if (mode === "year") { start = new Date(a.getFullYear(), 0, 1); end = new Date(a.getFullYear() + 1, 0, 1); }
+  return { mode, start, end, period: periodFor(start, end) };
+}
+function shiftRange(r, dir) {
+  if (r.mode === "day") return makeRange("day", addDays(r.start, dir));
+  if (r.mode === "week") return makeRange("week", addDays(r.start, 7 * dir));
+  if (r.mode === "month") return makeRange("month", new Date(r.start.getFullYear(), r.start.getMonth() + dir, 1));
+  if (r.mode === "year") return makeRange("year", new Date(r.start.getFullYear() + dir, 0, 1));
+  const span = Math.round((r.end - r.start) / 864e5);
+  return makeRange("custom", r.start, addDays(r.start, span * dir), addDays(r.end, span * dir));
+}
+function buildChart(hass, ids, raw, r, m) {
+  const now = new Date(), vat = m.vat, per = r.period;
+  const keyOf = d => per === "hour" ? dayKey(d) + "T" + pad(d.getHours()) : per === "day" ? dayKey(d) : monthKey(d);
+  const val = k => { const s = hass?.states?.[ids[k]]; return s && isNum(s.state) ? Number(s.state) : null; };
+  const rows = {};
+  for (const k of CUM_KEYS) for (const x of raw?.[ids[k]] || []) {
+    const d = new Date(typeof x.start === "number" ? x.start : Date.parse(x.start));
+    const row = rows[keyOf(d)] ||= { st: {} };
+    row[k] = x.change; row.st[k] = x.state;
+  }
+  const pack = o => {
+    const i = (isNum(o.import_s1) || isNum(o.import_s2)) ? (Number(o.import_s1) || 0) + (Number(o.import_s2) || 0) : null;
+    return { imp: i, exp: isNum(o.export_kwh) ? Number(o.export_kwh) : null, cost: isNum(o.energy_cost) ? o.energy_cost * (1 + vat) : null, sell: isNum(o.export_value) ? Number(o.export_value) : null };
+  };
+  const out = [];
+  for (let d = new Date(r.start); d < r.end;) {
+    const nx = per === "hour" ? new Date(d.getTime() + 36e5) : per === "day" ? addDays(d, 1) : new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    const row = rows[keyOf(d)];
+    let v = row ? pack(row) : null;
+    const live = d <= now && nx > now;
+    if (live && per === "day" && m.todayV) v = m.todayV;                      // today up to now
+    if (live && per === "month" && m.isCurrent) v = { imp: m.month.imp, exp: m.month.exp, cost: m.month.cost, sell: m.month.sell };
+    if (live && per === "hour" && !row) {                                       // current hour up to now
+      const p = rows[keyOf(new Date(d.getTime() - 36e5))];
+      if (p) { const o = {}; for (const k of CUM_KEYS) { const c = val(k); if (isNum(c) && isNum(p.st[k]) && c >= p.st[k]) o[k] = c - p.st[k]; } v = pack(o); }
+    }
+    const tip = per === "hour" ? `${d.getDate()} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}, ${pad(d.getHours())}:00–${pad(nx.getHours() || 24)}:00`
+      : per === "day" ? `${d.getDate()} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}${live ? " (do teraz)" : ""}` : monthName(d);
+    const l1 = per === "hour" ? pad(d.getHours()) : per === "day" ? pad(d.getDate()) : MONTH_SHORT[d.getMonth()];
+    const l2 = per === "hour" ? "" : per === "day" ? MONTH_SHORT[d.getMonth()] : String(d.getFullYear()).slice(2);
+    out.push({ d, nx, v: d > now ? null : v, future: d > now, live, tip, l1, l2 });
+    d = nx;
+  }
+  const tot = { imp: 0, exp: 0, cost: 0, sell: 0 }, any = { imp: 0, exp: 0, cost: 0, sell: 0 };
+  for (const b of out) for (const k in tot) if (isNum(b.v?.[k])) { tot[k] += b.v[k]; any[k]++; }
+  for (const k in tot) if (!any[k]) tot[k] = null;
+  const elapsedEnd = new Date(Math.min(r.end, now));
+  const units = per === "hour" ? Math.max(1, (elapsedEnd - r.start) / 36e5) : Math.max(1, Math.ceil((elapsedEnd - r.start) / 864e5));
+  const avg = {}; for (const k in tot) avg[k] = isNum(tot[k]) ? tot[k] / units : null;
+  return { r, per, buckets: out, tot, avg, avgLabel: per === "hour" ? "Średnio na godzinę" : "Średnio dziennie", loading: !raw };
+}
+function barSpark(values, color, w = 90, h = 50) {
+  const v = values.map(x => isNum(x) ? Math.abs(Number(x)) : 0);
+  if (!v.some(Boolean)) return `<div class="nohist" style="height:${h}px">brak danych</div>`;
+  const max = Math.max(...v), bw = w / v.length;
+  const id = "bs" + (++gid);
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="height:${h}px"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}"/><stop offset="1" stop-color="${color}" stop-opacity=".15"/></linearGradient></defs>${v.map((x, i) => `<rect x="${(i * bw + bw * .2).toFixed(2)}" y="${(h - x / max * h).toFixed(2)}" width="${(bw * .6).toFixed(2)}" height="${(x / max * h).toFixed(2)}" fill="url(#${id})"/>`).join("")}</svg>`;
+}
+function flowSvg(ch) {
+  const W = 1000, H = 300, L = 46, R = 8, T = 30, B = 52;
+  const b = ch.buckets, n = b.length;
+  const maxI = Math.max(0, ...b.map(x => Number(x.v?.imp) || 0)), maxE = Math.max(0, ...b.map(x => Number(x.v?.exp) || 0));
+  const span = Math.max(1, maxI + maxE);
+  const step = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000].find(s => (Math.ceil(maxI / s) + Math.ceil(maxE / s)) <= 6 && s * 4 >= span / 2) || 10000;
+  const top = Math.max(step, Math.ceil(maxI / step) * step), bot = Math.max(step, Math.ceil(maxE / step) * step);
+  const y = v => T + (top - v) / (top + bot) * (H - T - B);
+  const slot = (W - L - R) / n, bw = Math.min(34, slot * .64);
+  const every = n > 40 ? Math.ceil(n / 24) : 1;
+  let g = "";
+  for (let v = -bot; v <= top + 1e-9; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="${Math.abs(v) < 1e-9 ? "zero" : "grid"}"/><text x="${L - 8}" y="${y(v) + 5}" text-anchor="end" class="ax">${+v.toFixed(2)}</text>`;
+  for (let i = 0; i <= n; i++) g += `<line x1="${L + slot * i}" x2="${L + slot * i}" y1="${T}" y2="${H - B}" class="vgrid"/>`;
+  const days = b.map((x, i) => {
+    const cx = L + slot * i + slot / 2, a = Number(x.v?.imp) || 0, e = Number(x.v?.exp) || 0;
+    const lab = i % every ? "" : `<text x="${cx}" y="${H - B + 22}" text-anchor="middle" class="xl">${x.l1}</text>${x.l2 ? `<text x="${cx}" y="${H - B + 40}" text-anchor="middle" class="xl">${x.l2}</text>` : ""}`;
+    return `<g class="day${x.future ? " fut" : ""}" data-i="${i}" data-x="${cx}" data-yi="${y(a)}" data-ye="${y(-e)}"><rect class="hit" x="${L + slot * i}" y="${T}" width="${slot}" height="${H - T - B + 44}" fill="transparent"/><rect class="bi" x="${cx - bw / 2}" y="${y(a)}" width="${bw}" height="${Math.max(0, y(0) - y(a))}" rx="3" fill="url(#gImp)"/><rect class="be" x="${cx - bw / 2}" y="${y(0) + 1}" width="${bw}" height="${Math.max(0, y(-e) - y(0) - 1)}" rx="3" fill="url(#gExp)"/>${lab}</g>`;
+  }).join("");
+  return `<svg class="fc-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"><defs><linearGradient id="gImp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb935"/><stop offset="1" stop-color="#f08b12"/></linearGradient><linearGradient id="gExp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#13c983"/><stop offset="1" stop-color="#2cf2a6"/></linearGradient></defs><text x="4" y="16" class="unit">kWh</text>${g}${days}<g class="cursor"><line class="cl" y1="${T}" y2="${H - B}"/><circle class="ci" r="6"/><circle class="ce" r="6"/></g></svg>`;
+}
+function chartCard(ch) {
+  const r = ch.r, endIncl = addDays(r.end, -1), now = new Date();
+  const tile = (k, ic, tone, label, value, cls, color) => `<div class="fc-tile"><div class="fc-tile-top">${icon(ic, tone, "ic-plain fc-ic")}<div class="fc-tile-txt"><div class="muted2">${label}</div><div class="fc-val ${cls}" data-c="${k}">${value(ch.tot[k])}</div></div><div class="fc-spark">${barSpark(ch.buckets.map(b => b.v?.[k]), color)}</div></div><div class="fc-avg"><span class="muted2">${ch.avgLabel}</span><b data-a="${k}">${value(ch.avg[k])}</b></div></div>`;
+  return `<section class="box fc">
+  <div class="fc-head"><h3>Przepływ energii <span>(wybrany okres)</span></h3><div class="legend"><span><b style="background:var(--o)"></b>Pobór z sieci</span><span><b style="background:var(--g)"></b>Oddanie do sieci</span></div></div>
+  <div class="fc-ctrl">
+    <button class="fc-btn fc-arrow" data-shift="-1" aria-label="Wcześniej"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+    <label class="fc-date">${icon("calendar-month", "blue")}<span><small>Od</small><input type="date" data-f="from" value="${isoDate(r.start)}"></span><button class="fc-x" data-x="from" aria-label="Wyczyść">×</button></label>
+    <label class="fc-date">${icon("calendar-month", "blue")}<span><small>Do</small><input type="date" data-f="to" value="${isoDate(endIncl)}"></span><button class="fc-x" data-x="to" aria-label="Wyczyść">×</button></label>
+    <button class="fc-btn fc-arrow" data-shift="1" ${r.end > now ? "disabled" : ""} aria-label="Później"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+    <span class="fc-sep"></span>
+    <div class="fc-modes">${MODES.map(([k, l]) => `<button class="fc-btn fc-mode${r.mode === k ? " on" : ""}" data-mode="${k}">${l}</button>`).join("")}</div>
+    <span class="fc-sep"></span>
+    <button class="fc-btn fc-today" data-today="1">Dzisiaj</button>
+    <button class="fc-btn fc-arrow fc-cal" data-cal="1" aria-label="Wybierz zakres"><ha-icon icon="mdi:calendar-month"></ha-icon></button>
+  </div>
+  <div class="fc-plot">${ch.loading ? `<div class="nohist big">Ładowanie…</div>` : ch.buckets.some(b => b.v) ? flowSvg(ch) : `<div class="nohist big">Brak danych w tym okresie</div>`}<div class="fc-tip" hidden></div></div>
+  <div class="fc-tiles">
+    ${tile("imp", "lightning-bolt", "orange", "Pobór z sieci", v => kwh(v), "t-orange", TONE.orange)}
+    ${tile("exp", "arrow-up", "green", "Oddanie do sieci", v => isNum(v) ? kwh(-v) : "—", "t-green", TONE.green)}
+    ${tile("sell", "database-outline", "blue", "Wartość sprzedaży (RCE)", v => zl(v), "", TONE.blue)}
+    ${tile("cost", "cart", "red", "Koszt zakupu energii", v => zl(v), "t-red", TONE.red)}
+  </div>
+</section>`;
+}
+
 class PGEPanel extends PGEBase {
   set panel(p) { this._panelConfig = p?.config || {}; }
   set narrow(n) { this._narrow = n; }
+  _chart(m) {
+    this._range ||= makeRange("month", new Date());
+    return buildChart(this._hass, this._ids || {}, this._chartRaw, this._range, m);
+  }
+  async _refresh() {
+    if (!this._hass) return;
+    this._range ||= makeRange("month", new Date());
+    const w = statWindow(this._offset), rg = this._range;
+    const p = loadStats(this._hass, this._ids, w.start, w.end);
+    const q = rg.start < new Date() ? loadStats(this._hass, this._ids, rg.start, new Date(Math.min(rg.end, Date.now() + 36e5)), rg.period) : Promise.resolve({});
+    this._draw();
+    const [raw, craw] = await Promise.all([p, q]);
+    let ch = false;
+    if (raw && raw !== this._raw) { this._raw = raw; ch = true; }
+    if (rg === this._range && craw && craw !== this._chartRaw) { this._chartRaw = craw; ch = true; }
+    if (ch) this._draw();
+  }
+  _setRange(r) {
+    if (!r || !(r.start < r.end)) return;
+    this._range = r; this._chartRaw = null; this._refresh();
+  }
+  _bindChart(m) {
+    const root = this.shadowRoot, card = root.querySelector(".fc");
+    if (!card) return;
+    const ch = this._chart(m), r = ch.r;
+    card.querySelectorAll("[data-shift]").forEach(b => b.onclick = () => this._setRange(shiftRange(r, Number(b.dataset.shift))));
+    card.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => {
+      const now = new Date(), anchor = now >= r.start && now < r.end ? now : r.start;
+      this._setRange(makeRange(b.dataset.mode, anchor));
+    });
+    card.querySelector("[data-today]").onclick = () => this._setRange(makeRange(MODES.some(x => x[0] === r.mode) ? r.mode : "month", new Date()));
+    card.querySelector("[data-cal]").onclick = () => { const i = card.querySelector('[data-f="from"]'); try { i.showPicker(); } catch (e) { i.focus(); } };
+    const custom = () => {
+      const f = fromIso(card.querySelector('[data-f="from"]').value), t = fromIso(card.querySelector('[data-f="to"]').value);
+      if (f && t && f <= t) this._setRange(makeRange("custom", f, f, addDays(t, 1)));
+    };
+    card.querySelectorAll("input[type=date]").forEach(i => i.onchange = custom);
+    card.querySelectorAll("[data-x]").forEach(b => b.onclick = e => { e.preventDefault(); this._setRange(makeRange("month", new Date())); });
+    // hover: tooltip + tiles show the bucket; leave: whole period; click: drill down
+    const svg = card.querySelector(".fc-svg"), tip = card.querySelector(".fc-tip");
+    if (!svg) return;
+    const cur = svg.querySelector(".cursor");
+    const setTiles = (v, a) => {
+      card.querySelectorAll("[data-c]").forEach(el => { const k = el.dataset.c, x = v[k]; el.textContent = k === "exp" ? (isNum(x) ? kwh(-x) : "—") : k === "imp" ? kwh(x) : zl(x); });
+    };
+    const show = i => {
+      const b = i === null ? null : ch.buckets[i];
+      svg.classList.toggle("focus", !!b);
+      svg.querySelectorAll(".day").forEach(g => g.classList.toggle("sel", b && Number(g.dataset.i) === i));
+      if (!b) { tip.hidden = true; cur.style.display = "none"; setTiles(ch.tot, ch.avg); return; }
+      const g = svg.querySelector(`.day[data-i="${i}"]`), x = Number(g.dataset.x);
+      cur.style.display = ""; cur.querySelector(".cl").setAttribute("x1", x); cur.querySelector(".cl").setAttribute("x2", x);
+      cur.querySelector(".ci").setAttribute("cx", x); cur.querySelector(".ci").setAttribute("cy", g.dataset.yi);
+      cur.querySelector(".ce").setAttribute("cx", x); cur.querySelector(".ce").setAttribute("cy", g.dataset.ye);
+      tip.innerHTML = `<div class="tt">${esc(b.tip)}</div><div><b style="background:var(--o)"></b>Pobór z sieci<span>${kwh(b.v?.imp)}</span></div><div><b style="background:var(--g)"></b>Oddanie do sieci<span>${kwh(b.v?.exp)}</span></div>${ch.per !== "hour" ? `<div class="hint">kliknij, aby przejść do ${ch.per === "day" ? "godzin tego dnia" : "dni tego miesiąca"}</div>` : ""}`;
+      tip.hidden = false;
+      const pct = x / 1000 * 100; tip.style.left = `clamp(110px, ${pct}%, calc(100% - 110px))`;
+      setTiles(b.v || {}, null);
+    };
+    svg.querySelectorAll(".day:not(.fut)").forEach(g => {
+      const i = Number(g.dataset.i), b = ch.buckets[i];
+      g.addEventListener("mouseenter", () => show(i));
+      g.addEventListener("click", () => {
+        if (ch.per === "day") this._setRange(makeRange("day", b.d));
+        else if (ch.per === "month") this._setRange(makeRange("month", b.d));
+      });
+    });
+    svg.addEventListener("mouseleave", () => show(null));
+    show(null);
+  }
   _draw() {
     const m = this._model(), c = { ...(this._panelConfig || {}), ...this._config };
-    if (!this._flowMode) { this._flowMode = "month"; this._flowBase = new Date(); }
-    const fp = this._flowCustom || flowPeriod(this._flowMode, this._flowBase);
-    const flowLabel = flowDate(fp.start) + " – " + flowDate(new Date(fp.end.getTime() - 864e5));
-    const flowRows = this._flowRaw ? flowFromStatistics(this._flowRaw, this._ids || {}, fp.start, fp.end, this._flowMode) : [];
-    const flowMarkup = this._flowLoading ? '<div class="nohist big">Wczytywanie danych wybranego okresu…</div>' : flowChart(flowRows);
-    const flowControls = `<div class="flow-controls">
-      <button type="button" class="flow-nav" data-shift="-1" title="Poprzedni okres">❮</button>
-      <label>Od <input type="date" class="flow-start" value="${flowDate(fp.start)}" aria-label="Data od"></label>
-      <label>Do <input type="date" class="flow-end" value="${flowDate(new Date(fp.end.getTime() - 864e5))}" aria-label="Data do"></label>
-      <button type="button" class="flow-nav" data-shift="1" title="Następny okres">❯</button>
-      <div class="flow-presets">${[["day","Dzień"],["week","Tydzień"],["month","Miesiąc"],["year","Rok"]].map(([k,v]) => `<button type="button" class="flow-mode ${this._flowMode === k && !this._flowCustom ? "selected" : ""}" data-mode="${k}">${v}</button>`).join("")}<button type="button" class="flow-today">Dzisiaj</button></div>
-    </div>`;
-
     const info = t => `<ha-icon class="info" icon="mdi:information-outline" title="${esc(t)}"></ha-icon>`;
     const mAcc = MONTH_ACC[m.sel.getMonth()], prevI = MONTH_INSTR[m.prevD.getMonth()];
     const invDiff = isNum(m.invoice) && isNum(m.invoicePrev) ? m.invoice - m.invoicePrev : null;
@@ -517,26 +684,7 @@ class PGEPanel extends PGEBase {
     </div>
   </section>
 
-  <section class="mid">
-    <div class="box chart"><div class="chart-head"><h3>Przepływ energii <span>(wybrany okres)</span></h3><div class="legend"><span><b style="background:var(--o)"></b>Pobór z sieci</span><span><b style="background:var(--g)"></b>Oddanie do sieci</span></div></div>${flowControls}${flowMarkup}</div>
-    <div class="stack">
-      <div class="box">${icon("lightning-bolt", "orange", "ic-plain")}<div class="s-body"><div class="muted2">Pobór z sieci</div><div class="s-val">${kwh(m.month.imp)}</div></div>${sw(m.spark.imp, TONE.orange, 100, 34)}</div>
-      <div class="box">${icon("arrow-up", "green", "ic-plain")}<div class="s-body"><div class="muted2">Oddanie do sieci</div><div class="s-val">${kwh(m.month.exp)}</div></div>${sw(m.spark.exp, TONE.green, 100, 34)}</div>
-      <div class="box">${icon("database-outline", "blue", "ic-plain")}<div class="s-body"><div class="muted2">Wartość sprzedaży (RCE)</div><div class="s-val">${zl(m.month.sell)}</div></div>${sw(m.spark.sell, TONE.blue, 100, 34)}</div>
-    </div>
-  </section>
-
-  <section class="bot">
-    <div class="box">${icon("cart", "red", "ic-plain")}<div class="b-body"><div class="muted2">Koszt zakupu energii</div><div class="b-val">${zl(m.month.cost)}</div>
-      <div class="b-foot"><div>${delta(m.month.cost, m.prev.cost, true)}${isNum(m.prev.cost) && m.prev.cost ? `<div class="b-note">w porównaniu z ${prevI}</div>` : ""}</div>${sw(m.spark.cost, TONE.red, 90, 44)}</div></div></div>
-    <div class="box">${icon("trending-up", "green", "ic-plain")}<div class="b-body"><div class="muted2">Wartość oddanej energii</div><div class="b-val">${zl(m.month.sell)}</div>
-      <div class="b-foot"><div>${delta(m.month.sell, m.prev.sell, false)}${isNum(m.prev.sell) && m.prev.sell ? `<div class="b-note">w porównaniu z ${prevI}</div>` : ""}</div>${sw(m.spark.sell, TONE.green, 90, 44)}</div></div></div>
-    <div class="box">${icon("chart-bar", "blue", "ic-plain")}<div class="b-body"><div class="muted2">Aktualna cena RCE</div><div class="b-val">${isNum(m.rce) ? NF4.format(m.rce) + " zł/kWh" : "—"}</div><div class="b-note">${esc(rceSlot)}</div>
-      <div class="b-foot" style="margin-top:auto">${spark(m.rceToday, TONE.blue, 200, 40)}</div></div></div>
-    <div class="box">${icon("clock-outline", "blue", "ic-plain")}<div class="b-body"><div class="muted2">Taryfa dystrybucji</div><div class="b-val">${esc(tariff?.name || "G12")}</div>
-      <div class="b-note">Obecnie: ${zoneKey === "s1" ? "strefa dzienna" : zoneKey === "s2" ? "strefa nocna" : "—"}</div>
-      <div class="zone" title="energia + dystrybucja zmienna, brutto">${icon(zoneKey === "s2" ? "weather-night" : "white-balance-sunny", zoneKey === "s2" ? "blue" : "orange", "ic-plain")}<div><div class="b-val" style="margin:0;font-size:18px">${isNum(zPrice) ? NF4.format(zPrice) + " zł/kWh" : "—"}</div></div></div></div></div>
-  </section>
+  ${chartCard(this._chart(m))}
 
   <section class="tables">
     <div class="box"><h3>Bilans energii</h3><table><thead><tr><th>Okres</th><th>Pobrano</th><th>Oddano</th><th>Bilans</th></tr></thead><tbody>${m.periods.map(([l, r]) => row(l, r)).join("")}</tbody></table></div>
@@ -547,54 +695,8 @@ class PGEPanel extends PGEBase {
 </div>
 <div class="foot">Kwoty są prognozą lokalną integracji (stawki z konfiguracji, RCE z PSE), nie fakturą PGE. Zakup energii w tabeli i kafelku – brutto (bez dystrybucji). v${VERSION}</div>
 </main>`;
-    this.shadowRoot.querySelectorAll(".nav").forEach(b => b.onclick = () => { this._offset = Math.min(0, this._offset + Number(b.dataset.d)); this._sig = ""; this._refresh(); });
-    const changeFlow = async () => {
-      const p = this._flowCustom || flowPeriod(this._flowMode, this._flowBase);
-      this._flowLoading = true;
-      const request = (this._flowRequest = (this._flowRequest || 0) + 1);
-      this._draw();
-      const start = new Date(p.start); start.setDate(start.getDate() - 1);
-      const end = new Date(Math.min(p.end.getTime(), Date.now() + 864e5));
-      const data = end > start ? await loadStats(this._hass, this._ids || {}, start, end) : null;
-      if (request !== this._flowRequest) return;
-      this._flowRaw = data;
-      this._flowLoading = false;
-      this._draw();
-    };
-    this.shadowRoot.querySelectorAll(".flow-mode").forEach(b => b.onclick = () => {
-      this._flowMode = b.dataset.mode; this._flowCustom = null; changeFlow();
-    });
-    this.shadowRoot.querySelectorAll(".flow-nav").forEach(b => b.onclick = () => {
-      const dir = Number(b.dataset.shift);
-      if (this._flowCustom) {
-        const span = Math.round((this._flowCustom.end - this._flowCustom.start) / 864e5);
-        const start = new Date(this._flowCustom.start); start.setDate(start.getDate() + dir * span);
-        const end = new Date(this._flowCustom.end); end.setDate(end.getDate() + dir * span);
-        this._flowCustom = { start, end };
-      } else {
-        const d = new Date(this._flowBase);
-        if (this._flowMode === "day") d.setDate(d.getDate() + dir);
-        else if (this._flowMode === "week") d.setDate(d.getDate() + dir * 7);
-        else if (this._flowMode === "year") d.setFullYear(d.getFullYear() + dir);
-        else d.setMonth(d.getMonth() + dir);
-        this._flowBase = d;
-      }
-      changeFlow();
-    });
-    this.shadowRoot.querySelector(".flow-today").onclick = () => {
-      this._flowBase = new Date(); this._flowCustom = null; changeFlow();
-    };
-    const setCustom = () => {
-      const start = flowFromDate(this.shadowRoot.querySelector(".flow-start").value);
-      const last = flowFromDate(this.shadowRoot.querySelector(".flow-end").value);
-      if (!start || !last || last < start) return;
-      const end = new Date(last); end.setDate(end.getDate() + 1);
-      if ((end - start) / 864e5 > 366) return;
-      this._flowCustom = { start, end }; changeFlow();
-    };
-    this.shadowRoot.querySelector(".flow-start").onchange = setCustom;
-    this.shadowRoot.querySelector(".flow-end").onchange = setCustom;
-    if (!this._flowRequested && this._hass) { this._flowRequested = true; void changeFlow(); }
+    this._bindChart(m);
+    this.shadowRoot.querySelectorAll(".nav").forEach(b => b.onclick = () => { this._offset = Math.min(0, this._offset + Number(b.dataset.d)); this._range = makeRange("month", monthStart(new Date(), this._offset)); this._chartRaw = null; this._sig = ""; this._refresh(); });
     // aside tiles are previews only – no navigation inside the panel
     this.shadowRoot.querySelectorAll(".aside .link").forEach(el => el.classList.remove("link"));
   }
