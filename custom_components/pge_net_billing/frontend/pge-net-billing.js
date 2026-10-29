@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.3.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.4.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -204,14 +204,58 @@ function flowChart(flow) {
   const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000].find(s => s * 3 >= raw) || Math.ceil(raw / 3);
   const top = step * 3, bottom = step * 2;
   const y = v => T + (top - v) / (top + bottom) * (H - T - B);
-  const n = flow.length, slot = (W - L - R) / n, bw = Math.min(18, slot * .5);
+  const n = flow.length, slot = (W - L - R) / Math.max(1, n), bw = Math.max(1, Math.min(18, slot * .5));
   let g = "";
   for (let v = -bottom; v <= top; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="${v === 0 ? "zero" : "grid"}"/><text x="${L - 7}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
   const bars = flow.map((f, i) => {
     const cx = L + slot * i + slot / 2, a = Number(f.v?.imp) || 0, e = Number(f.v?.exp) || 0;
-    return `<rect x="${cx - bw / 2}" y="${y(a)}" width="${bw}" height="${Math.max(0, y(0) - y(a))}" rx="2" fill="url(#gImp)"/><rect x="${cx - bw / 2}" y="${y(0) + 1}" width="${bw}" height="${Math.max(0, y(-e) - y(0))}" rx="2" fill="url(#gExp)"/><text x="${cx}" y="${H - 6}" text-anchor="middle">${dayShort(f.d)}</text>`;
+    return `<rect x="${cx - bw / 2}" y="${y(a)}" width="${bw}" height="${Math.max(0, y(0) - y(a))}" rx="2" fill="url(#gImp)"/><rect x="${cx - bw / 2}" y="${y(0) + 1}" width="${bw}" height="${Math.max(0, y(-e) - y(0))}" rx="2" fill="url(#gExp)"/><text x="${cx}" y="${H - 6}" text-anchor="middle">${n > 45 ? (i % Math.ceil(n / 12) ? "" : dayShort(f.d)) : dayShort(f.d)}</text>`;
   }).join("");
   return `<svg class="flow" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"><defs><linearGradient id="gImp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb52e"/><stop offset="1" stop-color="#f08a14"/></linearGradient><linearGradient id="gExp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#16c97f"/><stop offset="1" stop-color="#2af0a0"/></linearGradient></defs><text x="${L - 30}" y="10" class="unit">kWh</text>${g}${bars}</svg>`;
+}
+
+/* ---------- independent energy-flow period selection ---------- */
+function flowDate(d) { return [d.getFullYear(), pad(d.getMonth() + 1), pad(d.getDate())].join("-"); }
+function flowFromDate(s) { const p = (s || "").split("-").map(Number); return p.length === 3 && p.every(Number.isFinite) ? new Date(p[0], p[1] - 1, p[2]) : null; }
+function flowPeriod(mode, base) {
+  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  let start, end;
+  if (mode === "day") { start = d; end = new Date(d); end.setDate(end.getDate() + 1); }
+  else if (mode === "week") { start = new Date(d); start.setDate(start.getDate() - (start.getDay() + 6) % 7); end = new Date(start); end.setDate(end.getDate() + 7); }
+  else if (mode === "year") { start = new Date(d.getFullYear(), 0, 1); end = new Date(d.getFullYear() + 1, 0, 1); }
+  else { start = new Date(d.getFullYear(), d.getMonth(), 1); end = new Date(d.getFullYear(), d.getMonth() + 1, 1); }
+  return { start, end };
+}
+function flowFromStatistics(raw, ids, start, end, mode) {
+  const daily = new Map();
+  for (const key of ["import_s1", "import_s2", "export_kwh"]) {
+    for (const item of raw?.[ids[key]] || []) {
+      const d = new Date(typeof item.start === "number" ? item.start : Date.parse(item.start));
+      if (!Number.isFinite(d.getTime()) || d < start || d >= end) continue;
+      const dk = flowDate(d);
+      const row = daily.get(dk) || { d: new Date(d.getFullYear(), d.getMonth(), d.getDate()), v: { imp: null, exp: null } };
+      const value = Number(item.change);
+      if (isNum(item.change)) {
+        if (key === "export_kwh") row.v.exp = (row.v.exp || 0) + value;
+        else row.v.imp = (row.v.imp || 0) + value;
+      }
+      daily.set(dk, row);
+    }
+  }
+  const output = [];
+  const cursor = new Date(start);
+  while (cursor < end && output.length < 370) {
+    const d = new Date(cursor);
+    const row = daily.get(flowDate(d));
+    output.push(row || { d, v: null });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  if (mode !== "year") return output;
+  return Array.from({ length: 12 }, (_, month) => {
+    const rows = output.filter(x => x.d.getMonth() === month);
+    const total = key => rows.some(x => isNum(x.v?.[key])) ? rows.reduce((a, x) => a + (Number(x.v?.[key]) || 0), 0) : null;
+    return { d: new Date(start.getFullYear(), month, 1), v: { imp: total("imp"), exp: total("exp") } };
+  });
 }
 
 /* ---------- shared tiles (panel aside + Lovelace) ---------- */
@@ -332,6 +376,7 @@ const CSS = `
 .mid{display:grid;grid-template-columns:minmax(0,1fr) 258px;gap:13px;margin-top:13px}
 .chart{padding:16px 16px 8px}.chart-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 h3{margin:0;font-size:16px;font-weight:700}h3 span{font-weight:400;color:var(--mut2)}.legend{font-size:13px;color:var(--mut2);display:flex;gap:16px}.legend b{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+.flow-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0 10px}.flow-controls button,.flow-controls label{border:1px solid #245078;border-radius:9px;background:#0b2034;color:#eaf2f9;padding:9px 11px;font:inherit;font-size:12px}.flow-controls button{cursor:pointer}.flow-controls button:hover{border-color:#3b8cff}.flow-controls .flow-nav{font-size:17px;color:#7fb3ff}.flow-controls label{display:flex;align-items:center;gap:7px;color:#9db2c3}.flow-controls input{background:transparent;border:0;color:#eaf2f9;font:inherit;color-scheme:dark;max-width:135px}.flow-presets{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}.flow-controls .selected{background:#238bff;color:#fff;border-color:#238bff}
 .flow{width:100%;height:auto;display:block;margin-top:8px}.flow text{fill:#c3d1dc;font-size:11px}.flow .unit{fill:#c3d1dc}.flow .grid{stroke:#173044;stroke-width:1}.flow .zero{stroke:#2b5470;stroke-width:1.2}
 .stack{display:grid;gap:12px;grid-auto-rows:1fr}.stack .box{display:flex;align-items:center;gap:14px;padding:12px 14px}.stack .s-body{flex:1;min-width:0;white-space:nowrap}.stack .s-body .muted2{font-size:12.5px}.stack .s-val{font-size:16px;font-weight:700;margin-top:3px;white-space:nowrap}.stack .spark-wrap{flex:0 0 64px}.stack .box{gap:10px;padding:10px 12px}
 .bot{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-top:13px}.bot .box{padding:12px 14px 8px;min-height:110px;display:flex;gap:14px}.bot .ic{width:36px;height:36px;padding:5px}.bot .b-body{flex:1;min-width:0;display:flex;flex-direction:column}
@@ -415,6 +460,19 @@ class PGEPanel extends PGEBase {
   set narrow(n) { this._narrow = n; }
   _draw() {
     const m = this._model(), c = { ...(this._panelConfig || {}), ...this._config };
+    if (!this._flowMode) { this._flowMode = "month"; this._flowBase = new Date(); }
+    const fp = this._flowCustom || flowPeriod(this._flowMode, this._flowBase);
+    const flowLabel = flowDate(fp.start) + " – " + flowDate(new Date(fp.end.getTime() - 864e5));
+    const flowRows = this._flowRaw ? flowFromStatistics(this._flowRaw, this._ids || {}, fp.start, fp.end, this._flowMode) : [];
+    const flowMarkup = this._flowLoading ? '<div class="nohist big">Wczytywanie danych wybranego okresu…</div>' : flowChart(flowRows);
+    const flowControls = `<div class="flow-controls">
+      <button type="button" class="flow-nav" data-shift="-1" title="Poprzedni okres">❮</button>
+      <label>Od <input type="date" class="flow-start" value="${flowDate(fp.start)}" aria-label="Data od"></label>
+      <label>Do <input type="date" class="flow-end" value="${flowDate(new Date(fp.end.getTime() - 864e5))}" aria-label="Data do"></label>
+      <button type="button" class="flow-nav" data-shift="1" title="Następny okres">❯</button>
+      <div class="flow-presets">${[["day","Dzień"],["week","Tydzień"],["month","Miesiąc"],["year","Rok"]].map(([k,v]) => `<button type="button" class="flow-mode ${this._flowMode === k && !this._flowCustom ? "selected" : ""}" data-mode="${k}">${v}</button>`).join("")}<button type="button" class="flow-today">Dzisiaj</button></div>
+    </div>`;
+
     const info = t => `<ha-icon class="info" icon="mdi:information-outline" title="${esc(t)}"></ha-icon>`;
     const mAcc = MONTH_ACC[m.sel.getMonth()], prevI = MONTH_INSTR[m.prevD.getMonth()];
     const invDiff = isNum(m.invoice) && isNum(m.invoicePrev) ? m.invoice - m.invoicePrev : null;
@@ -460,7 +518,7 @@ class PGEPanel extends PGEBase {
   </section>
 
   <section class="mid">
-    <div class="box chart"><div class="chart-head"><h3>Przepływ energii <span>(ostatnie 14 dni)</span></h3><div class="legend"><span><b style="background:var(--o)"></b>Pobór z sieci</span><span><b style="background:var(--g)"></b>Oddanie do sieci</span></div></div>${flowChart(m.flow)}</div>
+    <div class="box chart"><div class="chart-head"><h3>Przepływ energii <span>(wybrany okres)</span></h3><div class="legend"><span><b style="background:var(--o)"></b>Pobór z sieci</span><span><b style="background:var(--g)"></b>Oddanie do sieci</span></div></div>${flowControls}${flowMarkup}</div>
     <div class="stack">
       <div class="box">${icon("lightning-bolt", "orange", "ic-plain")}<div class="s-body"><div class="muted2">Pobór z sieci</div><div class="s-val">${kwh(m.month.imp)}</div></div>${sw(m.spark.imp, TONE.orange, 100, 34)}</div>
       <div class="box">${icon("arrow-up", "green", "ic-plain")}<div class="s-body"><div class="muted2">Oddanie do sieci</div><div class="s-val">${kwh(m.month.exp)}</div></div>${sw(m.spark.exp, TONE.green, 100, 34)}</div>
@@ -490,6 +548,52 @@ class PGEPanel extends PGEBase {
 <div class="foot">Kwoty są prognozą lokalną integracji (stawki z konfiguracji, RCE z PSE), nie fakturą PGE. Zakup energii w tabeli i kafelku – brutto (bez dystrybucji). v${VERSION}</div>
 </main>`;
     this.shadowRoot.querySelectorAll(".nav").forEach(b => b.onclick = () => { this._offset = Math.min(0, this._offset + Number(b.dataset.d)); this._sig = ""; this._refresh(); });
+    const changeFlow = async () => {
+      const p = this._flowCustom || flowPeriod(this._flowMode, this._flowBase);
+      this._flowLoading = true;
+      const request = (this._flowRequest = (this._flowRequest || 0) + 1);
+      this._draw();
+      const start = new Date(p.start); start.setDate(start.getDate() - 1);
+      const end = new Date(Math.min(p.end.getTime(), Date.now() + 864e5));
+      const data = end > start ? await loadStats(this._hass, this._ids || {}, start, end) : null;
+      if (request !== this._flowRequest) return;
+      this._flowRaw = data;
+      this._flowLoading = false;
+      this._draw();
+    };
+    this.shadowRoot.querySelectorAll(".flow-mode").forEach(b => b.onclick = () => {
+      this._flowMode = b.dataset.mode; this._flowCustom = null; changeFlow();
+    });
+    this.shadowRoot.querySelectorAll(".flow-nav").forEach(b => b.onclick = () => {
+      const dir = Number(b.dataset.shift);
+      if (this._flowCustom) {
+        const span = Math.round((this._flowCustom.end - this._flowCustom.start) / 864e5);
+        const start = new Date(this._flowCustom.start); start.setDate(start.getDate() + dir * span);
+        const end = new Date(this._flowCustom.end); end.setDate(end.getDate() + dir * span);
+        this._flowCustom = { start, end };
+      } else {
+        const d = new Date(this._flowBase);
+        if (this._flowMode === "day") d.setDate(d.getDate() + dir);
+        else if (this._flowMode === "week") d.setDate(d.getDate() + dir * 7);
+        else if (this._flowMode === "year") d.setFullYear(d.getFullYear() + dir);
+        else d.setMonth(d.getMonth() + dir);
+        this._flowBase = d;
+      }
+      changeFlow();
+    });
+    this.shadowRoot.querySelector(".flow-today").onclick = () => {
+      this._flowBase = new Date(); this._flowCustom = null; changeFlow();
+    };
+    const setCustom = () => {
+      const start = flowFromDate(this.shadowRoot.querySelector(".flow-start").value);
+      const last = flowFromDate(this.shadowRoot.querySelector(".flow-end").value);
+      if (!start || !last || last < start) return;
+      const end = new Date(last); end.setDate(end.getDate() + 1);
+      if ((end - start) / 864e5 > 366) return;
+      this._flowCustom = { start, end }; changeFlow();
+    };
+    this.shadowRoot.querySelector(".flow-start").onchange = setCustom;
+    this.shadowRoot.querySelector(".flow-end").onchange = setCustom;
     // aside tiles are previews only – no navigation inside the panel
     this.shadowRoot.querySelectorAll(".aside .link").forEach(el => el.classList.remove("link"));
   }
