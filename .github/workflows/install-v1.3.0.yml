@@ -1,9 +1,9 @@
-name: Install uploaded PGE Net-Billing v1.4.0 for HACS
+name: Install uploaded PGE Net-Billing v1.4.1 for HACS
 on:
   push:
     branches: [main]
     paths:
-      - 'pge_net_billing-1.4.0.zip'
+      - 'pge_net_billing-1.4.1.zip'
   workflow_dispatch:
 permissions:
   contents: write
@@ -14,13 +14,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: true
-      - name: Extract user's v1.4.0 archive and preserve official PGE logo
+      - name: Extract user's v1.4.1 archive and preserve official PGE logo
         run: |
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
           import json
-          archive = Path('pge_net_billing-1.4.0.zip')
+          archive = Path('pge_net_billing-1.4.1.zip')
           assert archive.is_file(), 'Uploaded ZIP not found'
           logo = Path('custom_components/pge_net_billing/frontend/pge-logo.svg')
           original_logo = logo.read_bytes()
@@ -45,7 +45,7 @@ jobs:
               manifest = 'custom_components/pge_net_billing/manifest.json'
               assert manifest in paths, 'Missing manifest.json in ZIP'
               data = json.loads(z.read(paths[manifest]))
-              assert data['version'] == '1.4.0', 'ZIP version must be 1.4.0'
+              assert data['version'] == '1.4.1', 'ZIP version must be 1.4.1'
               for dest, source in paths.items():
                   p = Path(dest)
                   p.parent.mkdir(parents=True, exist_ok=True)
@@ -53,12 +53,22 @@ jobs:
           assert logo.read_bytes() == original_logo, 'PGE logo must remain unchanged'
           print('Installed', len(paths), 'files from user ZIP; official PGE logo preserved')
           PY
-      - name: Commit v1.4.0 integration for HACS
+      - name: Commit v1.4.1 integration for HACS
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add custom_components/pge_net_billing README.md hacs.json
           if ! git diff --cached --quiet; then
-            git commit -m "Install user's PGE Net-Billing v1.4.0 for HACS"
+            git commit -m "Install user's PGE Net-Billing v1.4.1 for HACS"
             git push
+          fi
+
+      - name: Publish GitHub release 1.4.1 for HACS
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view 1.4.1 >/dev/null 2>&1; then
+            echo "Release 1.4.1 already exists"
+          else
+            gh release create 1.4.1 --target "$(git rev-parse HEAD)" --title "1.4.1" --notes "PGE Net-Billing 1.4.1" --latest
           fi
