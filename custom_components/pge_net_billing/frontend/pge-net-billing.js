@@ -594,6 +594,7 @@ class PGEPanel extends PGEBase {
     };
     this.shadowRoot.querySelector(".flow-start").onchange = setCustom;
     this.shadowRoot.querySelector(".flow-end").onchange = setCustom;
+    if (!this._flowRequested && this._hass) { this._flowRequested = true; void changeFlow(); }
     // aside tiles are previews only – no navigation inside the panel
     this.shadowRoot.querySelectorAll(".aside .link").forEach(el => el.classList.remove("link"));
   }
