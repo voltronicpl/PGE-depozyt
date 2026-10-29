@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.4.1 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.4.4 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.4.1";
+const VERSION = "1.4.4";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -205,7 +205,7 @@ function delta(cur, prev, upIsBad, plus = true) {
 }
 function logo(config, size = "lg") {
   if (config?.logo) return `<img class="logo logo-${size}" src="${esc(config.logo)}" alt="">`;
-  return `<span class="logo logo-${size} logo-badge"><ha-icon icon="mdi:transmission-tower"></ha-icon></span>`;
+  return `<img class="logo logo-${size}" src="/pge_net_billing_static/pge-logo.svg" alt="PGE">`;
 }
 function flowChart(flow) {
   const W = 680, H = 160, L = 34, R = 8, T = 18, B = 22;
@@ -325,7 +325,7 @@ const CSS = `
 .fc-sep{width:1px;height:30px;background:#244056;margin:0 2px}
 .fc-date{display:flex;align-items:center;gap:10px;height:38px;padding:0 10px 0 6px;border:1px solid #2a4f70;border-radius:9px;background:#0c1f30;min-width:150px;flex:1 1 160px;max-width:185px}
 .fc-date .ic{width:28px;height:28px;padding:4px;border-radius:7px}.fc-date>span:not(.ic){display:flex;flex-direction:column;flex:1;min-width:0}.fc-date small{font-size:10.5px;color:var(--mut2);line-height:1}
-.fc-date input{all:unset;font:600 13.5px var(--pge-font);color:var(--txt);color-scheme:dark;width:100%}.fc-date input::-webkit-calendar-picker-indicator{display:none}
+.fc-date{position:relative;cursor:pointer}.fc-dv{font:600 13.5px var(--pge-font);color:var(--txt)}.fc-date input{position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;color-scheme:dark}.fc-date input::-webkit-calendar-picker-indicator{display:none}
 .fc-x{all:unset;cursor:pointer;color:var(--mut2);font-size:18px;padding:0 4px}.fc-x:hover{color:#fff}
 .fc-plot{position:relative;margin-top:6px}.fc-svg{display:block;width:100%;height:auto}
 .fc-svg text{fill:#c3d1dc;font-size:14px}.fc-svg .unit{font-size:15px}.fc-svg .grid{stroke:#173044}.fc-svg .vgrid{stroke:#11273a;stroke-dasharray:3 4}.fc-svg .zero{stroke:#2b5470;stroke-width:1.2}
@@ -333,11 +333,11 @@ const CSS = `
 .fc-svg .cursor{display:none;pointer-events:none}.fc-svg .cl{stroke:#e8f1f8;stroke-dasharray:4 4;stroke-width:1.2}.fc-svg .ci,.fc-svg .ce{fill:#0b1a27;stroke:#fff;stroke-width:2}
 .fc-tip{position:absolute;top:-6px;transform:translateX(-50%);background:#0d1c2a;border:1px solid #2b4459;border-radius:9px;padding:9px 12px;font-size:12.5px;pointer-events:none;box-shadow:0 8px 20px #0007;min-width:200px;z-index:2}
 .fc-tip .tt{font-weight:700;margin-bottom:5px}.fc-tip div{display:flex;align-items:center;gap:7px;margin-top:3px;white-space:nowrap}.fc-tip b{width:10px;height:10px;border-radius:50%;display:inline-block}.fc-tip span{margin-left:auto;padding-left:14px;font-weight:700}.fc-tip .hint{color:var(--mut);font-size:10.5px;margin-top:6px}
-.fc-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:10px}
+.fc-tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:10px}
 .fc-tile{border:1px solid #17304a;border-radius:12px;background:linear-gradient(150deg,#0d2131,#0a1a27);padding:12px 14px 10px;min-width:0}
 .fc-tile{display:grid;grid-template-columns:auto minmax(0,1fr) 42%;column-gap:10px}.fc-tile-top{display:contents}.fc-ic{width:38px;height:38px;padding:2px;grid-row:1}.fc-tile-txt{min-width:0;grid-row:1;grid-column:2/4}.fc-tile-txt .muted2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fc-val{font-size:clamp(17px,1.6vw,22px);font-weight:800;margin-top:3px;white-space:nowrap}.fc-spark{grid-column:3;grid-row:2;align-self:end}.fc-spark .spark{height:40px!important}
 .fc-avg{display:flex;flex-direction:column;margin-top:6px;grid-column:1/3;grid-row:2}.fc-avg b{font-size:14px;margin-top:2px}
-@media(max-width:1000px){.fc-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.fc-sep{display:none}}
+@media(max-width:1250px){.fc-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:1000px){.fc-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.fc-sep{display:none}}
 @media(max-width:600px){.fc-tiles{grid-template-columns:1fr}.fc-ctrl{display:grid;grid-template-columns:40px minmax(0,1fr) minmax(0,1fr) 40px;gap:6px}.fc-date{max-width:none;min-width:0;padding-right:4px}.fc-date .ic{display:none}.fc-arrow{width:40px}.fc-modes{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.fc-mode{min-width:0}.fc-today{grid-column:1/4}.fc-plot{overflow-x:auto}.fc-svg{min-width:680px}.fc-tip{position:fixed;top:auto;bottom:16px;left:50%!important}}
 /* Panel */
 .pf{min-height:100vh;background:radial-gradient(ellipse at 40% -10%,#0b2233 0%,var(--bg) 60%);padding:16px 17px 24px}
@@ -449,6 +449,7 @@ for (const [tag, variant, name, description] of CARDS) {
 const CUM_KEYS = ["import_s1", "import_s2", "export_kwh", "energy_cost", "export_value"];
 const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const isoDate = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const plDate = d => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
 const fromIso = s => { const [y, m, d] = String(s).split("-").map(Number); return y && m && d ? new Date(y, m - 1, d) : null; };
 const MODES = [["day", "Dzień"], ["week", "Tydzień"], ["month", "Miesiąc"], ["year", "Rok"]];
 function periodFor(start, end) {
@@ -501,10 +502,11 @@ function buildChart(hass, ids, raw, r, m) {
       : per === "day" ? `${d.getDate()} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}${live ? " (do teraz)" : ""}` : monthName(d);
     const l1 = per === "hour" ? pad(d.getHours()) : per === "day" ? pad(d.getDate()) : MONTH_SHORT[d.getMonth()];
     const l2 = per === "hour" ? "" : per === "day" ? MONTH_SHORT[d.getMonth()] : String(d.getFullYear()).slice(2);
+    if (v && (isNum(v.sell) || isNum(v.cost))) v = { ...v, profit: (Number(v.sell) || 0) - (Number(v.cost) || 0) };
     out.push({ d, nx, v: d > now ? null : v, future: d > now, live, tip, l1, l2 });
     d = nx;
   }
-  const tot = { imp: 0, exp: 0, cost: 0, sell: 0 }, any = { imp: 0, exp: 0, cost: 0, sell: 0 };
+  const tot = { imp: 0, exp: 0, cost: 0, sell: 0, profit: 0 }, any = { imp: 0, exp: 0, cost: 0, sell: 0, profit: 0 };
   for (const b of out) for (const k in tot) if (isNum(b.v?.[k])) { tot[k] += b.v[k]; any[k]++; }
   for (const k in tot) if (!any[k]) tot[k] = null;
   const elapsedEnd = new Date(Math.min(r.end, now));
@@ -512,7 +514,13 @@ function buildChart(hass, ids, raw, r, m) {
   const avg = {}; for (const k in tot) avg[k] = isNum(tot[k]) ? tot[k] / units : null;
   return { r, per, buckets: out, tot, avg, avgLabel: per === "hour" ? "Średnio na godzinę" : "Średnio dziennie", loading: !raw };
 }
-function barSpark(values, color, w = 90, h = 50) {
+function barSpark(values, color, w = 90, h = 50, signed = false, neg = TONE.red) {
+  if (signed) {
+    const v = values.map(x => isNum(x) ? Number(x) : 0);
+    if (!v.some(Boolean)) return `<div class="nohist" style="height:${h}px">brak danych</div>`;
+    const hi = Math.max(0, ...v), lo = Math.min(0, ...v), span = hi - lo || 1, bw = w / v.length, y0 = hi / span * h;
+    return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="height:${h}px"><line x1="0" x2="${w}" y1="${y0}" y2="${y0}" stroke="#2b5470" stroke-width=".6"/>${v.map((x, i) => { const hh = Math.abs(x) / span * h; return `<rect x="${(i * bw + bw * .2).toFixed(2)}" y="${(x >= 0 ? y0 - hh : y0).toFixed(2)}" width="${(bw * .6).toFixed(2)}" height="${hh.toFixed(2)}" fill="${x >= 0 ? color : neg}" opacity=".85"/>`; }).join("")}</svg>`;
+  }
   const v = values.map(x => isNum(x) ? Math.abs(Number(x)) : 0);
   if (!v.some(Boolean)) return `<div class="nohist" style="height:${h}px">brak danych</div>`;
   const max = Math.max(...v), bw = w / v.length;
@@ -539,15 +547,26 @@ function flowSvg(ch) {
   }).join("");
   return `<svg class="fc-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"><defs><linearGradient id="gImp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb935"/><stop offset="1" stop-color="#f08b12"/></linearGradient><linearGradient id="gExp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#13c983"/><stop offset="1" stop-color="#2cf2a6"/></linearGradient></defs><text x="4" y="16" class="unit">kWh</text>${g}${days}<g class="cursor"><line class="cl" y1="${T}" y2="${H - B}"/><circle class="ci" r="6"/><circle class="ce" r="6"/></g></svg>`;
 }
+function rangeLabel(r) {
+  const e = addDays(r.end, -1);
+  if (r.mode === "day") return plDate(r.start);
+  if (r.mode === "month") return monthName(r.start).toLowerCase();
+  if (r.mode === "year") return `rok ${r.start.getFullYear()}`;
+  return `${pad(r.start.getDate())}.${pad(r.start.getMonth() + 1)}–${plDate(e)}`;
+}
+function balView(v) {
+  const i = v?.imp, e = v?.exp, b = isNum(i) && isNum(e) ? e - i : null;
+  return { i, e, b, cls: isNum(b) && b < 0 ? "t-red" : "t-green", sub: !isNum(b) ? "Brak danych" : b >= 0 ? "Więcej oddano niż pobrano" : "Więcej pobrano niż oddano", pct: energyPct(i, e) };
+}
 function chartCard(ch) {
   const r = ch.r, endIncl = addDays(r.end, -1), now = new Date();
-  const tile = (k, ic, tone, label, value, cls, color) => `<div class="fc-tile"><div class="fc-tile-top">${icon(ic, tone, "ic-plain fc-ic")}<div class="fc-tile-txt"><div class="muted2">${label}</div><div class="fc-val ${cls}" data-c="${k}">${value(ch.tot[k])}</div></div><div class="fc-spark">${barSpark(ch.buckets.map(b => b.v?.[k]), color)}</div></div><div class="fc-avg"><span class="muted2">${ch.avgLabel}</span><b data-a="${k}">${value(ch.avg[k])}</b></div></div>`;
+  const tile = (k, ic, tone, label, value, cls, color, tip = "") => `<div class="fc-tile"${tip ? ` title="${esc(tip)}"` : ""}><div class="fc-tile-top">${icon(ic, tone, "ic-plain fc-ic")}<div class="fc-tile-txt"><div class="muted2">${label}</div><div class="fc-val ${typeof cls === "function" ? cls(ch.tot[k]) : cls}" data-c="${k}">${value(ch.tot[k])}</div></div><div class="fc-spark">${barSpark(ch.buckets.map(b => b.v?.[k]), color, 90, 50, k === "profit")}</div></div><div class="fc-avg"><span class="muted2">${ch.avgLabel}</span><b data-a="${k}">${value(ch.avg[k])}</b></div></div>`;
   return `<section class="box fc">
   <div class="fc-head"><h3>Przepływ energii <span>(wybrany okres)</span></h3><div class="legend"><span><b style="background:var(--o)"></b>Pobór z sieci</span><span><b style="background:var(--g)"></b>Oddanie do sieci</span></div></div>
   <div class="fc-ctrl">
     <button class="fc-btn fc-arrow" data-shift="-1" aria-label="Wcześniej"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
-    <label class="fc-date">${icon("calendar-month", "blue")}<span><small>Od</small><input type="date" data-f="from" value="${isoDate(r.start)}"></span><button class="fc-x" data-x="from" aria-label="Wyczyść">×</button></label>
-    <label class="fc-date">${icon("calendar-month", "blue")}<span><small>Do</small><input type="date" data-f="to" value="${isoDate(endIncl)}"></span><button class="fc-x" data-x="to" aria-label="Wyczyść">×</button></label>
+    <label class="fc-date">${icon("calendar-month", "blue")}<span><small>Od</small><b class="fc-dv">${plDate(r.start)}</b><input type="date" data-f="from" value="${isoDate(r.start)}" tabindex="-1"></span><button class="fc-x" data-x="from" aria-label="Wyczyść">×</button></label>
+    <label class="fc-date">${icon("calendar-month", "blue")}<span><small>Do</small><b class="fc-dv">${plDate(endIncl)}</b><input type="date" data-f="to" value="${isoDate(endIncl)}" tabindex="-1"></span><button class="fc-x" data-x="to" aria-label="Wyczyść">×</button></label>
     <button class="fc-btn fc-arrow" data-shift="1" ${r.end > now ? "disabled" : ""} aria-label="Później"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
     <span class="fc-sep"></span>
     <div class="fc-modes">${MODES.map(([k, l]) => `<button class="fc-btn fc-mode${r.mode === k ? " on" : ""}" data-mode="${k}">${l}</button>`).join("")}</div>
@@ -561,6 +580,7 @@ function chartCard(ch) {
     ${tile("exp", "arrow-up", "green", "Oddanie do sieci", v => isNum(v) ? kwh(-v) : "—", "t-green", TONE.green)}
     ${tile("sell", "database-outline", "blue", "Wartość sprzedaży (RCE)", v => zl(v), "", TONE.blue)}
     ${tile("cost", "cart", "red", "Koszt zakupu energii", v => zl(v), "t-red", TONE.red)}
+    ${tile("profit", "scale-balance", "green", "Zysk / strata", v => zl(v, true), v => isNum(v) && v < 0 ? "t-red" : "t-green", TONE.green, "Wartość sprzedaży (RCE, trafia do depozytu) − koszt zakupu energii brutto w wybranym okresie. Bez dystrybucji i opłat stałych, bez oszczędności z autokonsumpcji.")}
   </div>
 </section>`;
 }
@@ -605,16 +625,25 @@ class PGEPanel extends PGEBase {
       if (f && t && f <= t) this._setRange(makeRange("custom", f, f, addDays(t, 1)));
     };
     card.querySelectorAll("input[type=date]").forEach(i => i.onchange = custom);
+    card.querySelectorAll(".fc-date").forEach(l => l.onclick = e => { if (e.target.closest(".fc-x")) return; e.preventDefault(); const i = l.querySelector("input"); try { i.showPicker(); } catch (_) { i.focus(); } });
     card.querySelectorAll("[data-x]").forEach(b => b.onclick = e => { e.preventDefault(); this._setRange(makeRange("month", new Date())); });
     // hover: tooltip + tiles show the bucket; leave: whole period; click: drill down
     const svg = card.querySelector(".fc-svg"), tip = card.querySelector(".fc-tip");
     if (!svg) return;
     const cur = svg.querySelector(".cursor");
     const setTiles = (v, a) => {
-      card.querySelectorAll("[data-c]").forEach(el => { const k = el.dataset.c, x = v[k]; el.textContent = k === "exp" ? (isNum(x) ? kwh(-x) : "—") : k === "imp" ? kwh(x) : zl(x); });
+      card.querySelectorAll("[data-c]").forEach(el => { const k = el.dataset.c, x = v[k]; el.textContent = k === "exp" ? (isNum(x) ? kwh(-x) : "—") : k === "imp" ? kwh(x) : k === "profit" ? zl(x, true) : zl(x); if (k === "profit") el.className = "fc-val " + (isNum(x) && x < 0 ? "t-red" : "t-green"); });
+    };
+    const setBal = (v, label) => {
+      const x = balView(v), q = k => root.querySelector(`[data-bb="${k}"]`);
+      if (!q("val")) return;
+      q("val").textContent = kwh(x.b, true); q("val").className = "k-val " + x.cls;
+      q("sub").textContent = x.sub; q("per").textContent = label;
+      q("imp").textContent = kwh(x.i); q("exp").textContent = kwh(x.e); q("bar").style.left = Math.max(2, Math.min(98, x.pct)).toFixed(1) + "%";
     };
     const show = i => {
       const b = i === null ? null : ch.buckets[i];
+      setBal(b ? (b.v || {}) : ch.tot, b ? b.tip : rangeLabel(r));
       svg.classList.toggle("focus", !!b);
       svg.querySelectorAll(".day").forEach(g => g.classList.toggle("sel", b && Number(g.dataset.i) === i));
       if (!b) { tip.hidden = true; cur.style.display = "none"; setTiles(ch.tot, ch.avg); return; }
@@ -640,6 +669,7 @@ class PGEPanel extends PGEBase {
   }
   _draw() {
     const m = this._model(), c = { ...(this._panelConfig || {}), ...this._config };
+    const ch = this._chart(m), bv = balView(ch.loading ? { imp: m.month.imp, exp: m.month.exp } : ch.tot);
     const info = t => `<ha-icon class="info" icon="mdi:information-outline" title="${esc(t)}"></ha-icon>`;
     const mAcc = MONTH_ACC[m.sel.getMonth()], prevI = MONTH_INSTR[m.prevD.getMonth()];
     const invDiff = isNum(m.invoice) && isNum(m.invoicePrev) ? m.invoice - m.invoicePrev : null;
@@ -668,9 +698,9 @@ class PGEPanel extends PGEBase {
       <div class="k-val t-green">${zl(m.deposit, true)}</div><div class="k-sub">Dostępne środki do rozliczenia</div></div></div>
       <div style="margin-top:auto">${bar(depositPct(m.deposit))}<div class="k-ends"><span>−${sc} zł<small>(do dopłaty)</small></span><span class="r">+${sc} zł<small>(nadwyżka)</small></span></div></div></div>
 
-    <div class="box"><div class="k-head"><span class="ic ic-green">${CICON.leaf}</span><div><div class="k-label">Bilans energii ${info("Oddano minus pobrano w wybranym miesiącu (statystyki Recordera).")}</div>
-      <div class="k-val ${isNum(m.month.bal) && m.month.bal < 0 ? "t-red" : "t-green"}">${kwh(m.month.bal, true)}</div><div class="k-sub">${!isNum(m.month.bal) ? "Brak danych" : m.month.bal >= 0 ? "Więcej oddano niż pobrano" : "Więcej pobrano niż oddano"}</div></div></div>
-      <div style="margin-top:auto">${bar(energyPct(m.month.imp, m.month.exp), "energy")}<div class="k-ends"><span>Pobrano<small class="t-orange" style="font-size:15px;font-weight:700;color:var(--o)">${kwh(m.month.imp)}</small></span><span class="r">Oddano<small style="font-size:15px;font-weight:700;color:var(--g)">${kwh(m.month.exp)}</small></span></div></div></div>
+    <div class="box"><div class="k-head"><span class="ic ic-green">${CICON.leaf}</span><div><div class="k-label">Bilans energii ${info("Oddano minus pobrano w okresie wybranym na wykresie „Przepływ energii” (najechanie na słupek pokazuje ten słupek).")}</div>
+      <div class="k-val ${bv.cls}" data-bb="val">${kwh(bv.b, true)}</div><div class="k-sub"><span data-bb="sub">${bv.sub}</span> · <span class="t-blue2" data-bb="per">${esc(rangeLabel(ch.r))}</span></div></div></div>
+      <div style="margin-top:auto"><div class="bar bar-energy"><i data-bb="bar" style="left:${Math.max(2, Math.min(98, bv.pct)).toFixed(1)}%"></i></div><div class="k-ends"><span>Pobrano<small style="font-size:15px;font-weight:700;color:var(--o)" data-bb="imp">${kwh(bv.i)}</small></span><span class="r">Oddano<small style="font-size:15px;font-weight:700;color:var(--g)" data-bb="exp">${kwh(bv.e)}</small></span></div></div></div>
   </section>
 
   <section class="box dep">
@@ -684,7 +714,7 @@ class PGEPanel extends PGEBase {
     </div>
   </section>
 
-  ${chartCard(this._chart(m))}
+  ${chartCard(ch)}
 
   <section class="bot">
     <div class="box">${icon("cart", "red", "ic-plain")}<div class="b-body"><div class="muted2">Koszt zakupu energii</div><div class="b-val">${zl(m.month.cost)}</div>
