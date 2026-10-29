@@ -1,9 +1,12 @@
-# PGE Net-Billing v1.3.0
+# PGE Net-Billing v1.4.0
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
+## Nowości v1.4.0
+W panelu **Przepływ energii** dodano wybór dat Od/Do, strzałki przesuwania okresu, przełączniki Dzień / Tydzień / Miesiąc / Rok i przycisk Dzisiaj. Wykres korzysta z dziennych statystyk Recordera; pozostałe kafelki, układ oraz logo PGE pozostają bez zmian.
+
 ## Automatyczna rejestracja zasobu Lovelace
-Po uruchomieniu integracja automatycznie rejestruje `/pge_net_billing_static/pge-net-billing.js?v=1.3.0` jako zasób **JavaScript module** w Home Assistant (tryb zasobów storage). Istniejący wpis jest aktualizowany bez duplikowania, a pozostałe zasoby są zachowane. Przy zasobach zarządzanych przez YAML wpis należy dodać ręcznie. Po aktualizacji uruchom ponownie Home Assistant i odśwież aplikację mobilną.
+Po uruchomieniu integracja automatycznie rejestruje `/pge_net_billing_static/pge-net-billing.js?v=1.4.0` jako zasób **JavaScript module** w Home Assistant (tryb zasobów storage). Istniejący wpis jest aktualizowany bez duplikowania, a pozostałe zasoby są zachowane. Przy zasobach zarządzanych przez YAML wpis należy dodać ręcznie. Po aktualizacji uruchom ponownie Home Assistant i odśwież aplikację mobilną.
 
 ## Instalacja
 Skopiuj `custom_components/pge_net_billing` do `/config/custom_components/`, uruchom ponownie HA i skonfiguruj integrację przez Ustawienia → Urządzenia i usługi.
