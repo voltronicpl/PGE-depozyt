@@ -4,7 +4,11 @@
   "version": "1.3.0",
   "documentation": "https://github.com/voltronicpl/PGE-depozyt",
   "requirements": [],
-  "dependencies": ["frontend", "http"],
+  "dependencies": [
+    "frontend",
+    "http",
+    "lovelace"
+  ],
   "codeowners": [],
   "config_flow": true,
   "iot_class": "local_polling"
