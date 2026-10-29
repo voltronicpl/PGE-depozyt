@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.4.0
+# PGE Net-Billing v1.4.1
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -22,7 +22,7 @@ Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać 
 - Najechanie na słupek: dymek z datą, poborem i oddaniem + kafelki pod wykresem pokazują ten słupek. Zjechanie: suma okresu i „Średnio dziennie”.
 - Kliknięcie słupka: dzień → godziny tego dnia, miesiąc (w widoku Rok) → dni tego miesiąca.
 - Bieżący dzień / godzina liczone do teraz (stan sensora − stan z końca poprzedniego okresu), nie tylko pełne godziny.
-- Kafle „Aktualna cena RCE” i „Taryfa dystrybucji” usunięte z panelu (jak na makiecie) – encje zostają.
+- v1.4.1: kafle „Koszt zakupu”, „Wartość oddanej”, „Aktualna cena RCE”, „Taryfa dystrybucji” przywrócone pod wykresem.
 
 ## Nowe w v1.3.0 – depozyt jak w PGE
 Eksport z miesiąca M PGE księguje w M+1; depozyt pokrywa tylko energię (nie dystrybucję i opłaty stałe), ważny 12 miesięcy od zaksięgowania, FIFO.
