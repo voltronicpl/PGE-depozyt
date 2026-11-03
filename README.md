@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.5.1
+# PGE Net-Billing v1.5.2
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -16,6 +16,9 @@ Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing 
 Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Nowe w v1.5.2 – poprawka RCE min / maks
+- W widoku Miesiąc / Rok „Najdrożej” i „Najtaniej” brały maksimum ze średnich godzinowych / dziennych, więc szczyty były zaniżone. Teraz to prawdziwe ceny 15-minutowe z dokładnym kwadransem (API zwraca też czas min / maks w każdym przedziale).
 
 ## Nowe w v1.5.1 – więcej klikalnych elementów (tylko faktyczne dane)
 - **Szacowana kwota rachunku** → rachunek miesiąc po miesiącu z rozbiciem (energia, depozyt, dystrybucja, opłaty stałe). Bieżący miesiąc = stan na teraz, bez dopowiadania reszty miesiąca.

@@ -131,9 +131,12 @@ def aggregate(prices, agg):
             local = t.astimezone(WARSAW)
             key = local.replace(minute=0, second=0, microsecond=0) if agg == 'hour' else \
                 datetime(local.year, local.month, local.day, tzinfo=WARSAW)
-        groups.setdefault(key, []).append(val)
+        groups.setdefault(key, []).append((val, slot))
     rows = []
     for key in sorted(groups):
-        v = groups[key]
-        rows.append([key.isoformat(), round(sum(v) / len(v), 5), round(min(v), 5), round(max(v), 5)])
+        g = groups[key]
+        v = [x[0] for x in g]
+        lo, hi = min(g), max(g)
+        # [start, mean, min, max, slot of min, slot of max] – min/max are real 15-min prices, not averages
+        rows.append([key.isoformat(), round(sum(v) / len(v), 5), round(lo[0], 5), round(hi[0], 5), lo[1], hi[1]])
     return rows
