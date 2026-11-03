@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.5.2 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.5.3 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.5.2";
+const VERSION = "1.5.3";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -638,7 +638,7 @@ function histSvg(items, r, o) {
   }
   const labs = items.map(it => it.lab ? `<text x="${X(it.t0)}" y="${H - B + 20}" text-anchor="middle" class="xl">${it.lab}</text>${it.lab2 ? `<text x="${X(it.t0)}" y="${H - B + 38}" text-anchor="middle" class="xl">${it.lab2}</text>` : ""}` : "").join("");
   const nowL = now > t0 && now < t1 ? `<line x1="${X(now)}" x2="${X(now)}" y1="${T}" y2="${H - B}" class="nowl"/><text x="${X(now) + 5}" y="${T + 12}" class="nowt">teraz</text>` : "";
-  const hits = items.map((it, i) => `<rect class="hit" data-i="${i}" x="${X(it.t0)}" y="${T}" width="${Math.max(1, X(it.t1) - X(it.t0))}" height="${H - T - B}" fill="transparent"/>`).join("");
+  const hits = o.type === "step" ? `<rect class="hit ov" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" data-l="${L}" data-r="${R}" data-w="${W}" data-t0="${t0}" data-t1="${t1}"/>` : items.map((it, i) => `<rect class="hit" data-i="${i}" x="${X(it.t0)}" y="${T}" width="${Math.max(1, X(it.t1) - X(it.t0))}" height="${H - T - B}" fill="transparent"/>`).join("");
   return `<svg class="hs" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"><text x="4" y="12" class="unit">${o.unit}</text>${g}${marks}${labs}${nowL}<line class="hl" y1="${T}" y2="${H - B}" style="display:none"/>${hits}</svg>`;
 }
 
@@ -672,14 +672,15 @@ class PGEHistory extends HTMLElement {
         d = { items, per: ch.per, tot, totX: extra(ch.tot), avg: k === "bal" ? (isNum(ch.avg.exp) && isNum(ch.avg.imp) ? ch.avg.exp - ch.avg.imp : null) : ch.avg[k], avgLabel: ch.avgLabel, err: !raw };
         if (ch.buckets.length > 40) { const ev = Math.ceil(ch.buckets.length / 24); d.items.forEach((it, i) => { if (i % ev) it.lab = it.lab2 = ""; }); }
       } else if (h.kind === "rce") {
-        const days = (r.end - r.start) / 864e5, agg = days > 62 ? "day" : days > 8 ? "hour" : "raw";
+        const days = (r.end - r.start) / 864e5, agg = "raw"; // always real 15-min prices, never averaged
         const res = await hass.callApi("GET", `pge_net_billing/rce?start=${isoDate(r.start)}&end=${isoDate(addDays(r.end, -1))}&agg=${agg}`);
         const len = agg === "raw" ? 9e5 : agg === "hour" ? 36e5 : 864e5, now = Date.now();
         const items = (res?.rows || []).map(x => { const t = new Date(x[0]); const t1 = agg === "day" ? +addDays(t, 1) : +t + len;
           return { t0: +t, t1, v: x[1], lo: x[2], hi: x[3], tlo: x[4] ? new Date(x[4]) : t, thi: x[5] ? new Date(x[5]) : t, fut: +t > now, tip: agg === "raw" ? `${dayShort(t)}, ${pad(t.getHours())}:${pad(t.getMinutes())}–${pad(new Date(t1).getHours())}:${pad(new Date(t1).getMinutes())}` : agg === "hour" ? `${dayShort(t)}, ${pad(t.getHours())}:00–${pad((t.getHours() + 1) % 24)}:00` : `${dayShort(t)} ${t.getFullYear()}` }; });
-        items.forEach(it => { const t = new Date(it.t0);
-          if (agg === "raw") { if (days <= 1.1 ? t.getMinutes() === 0 && t.getHours() % 3 === 0 : t.getMinutes() === 0 && t.getHours() === 0) it.lab = days <= 1.1 ? pad(t.getHours()) + ":00" : dayShort(t); }
-          else if (agg === "hour") { if (t.getHours() === 0 && t.getDate() % 2 === 1) it.lab = pad(t.getDate()); }
+        items.forEach(it => { const t = new Date(it.t0); if (t.getMinutes() || (days > 1.1 && t.getHours())) return;
+          if (days <= 1.1) { if (t.getHours() % 3 === 0) it.lab = pad(t.getHours()) + ":00"; }
+          else if (days <= 8) it.lab = dayShort(t);
+          else if (days <= 62) { if (t.getDate() % 2 === 1) it.lab = pad(t.getDate()); }
           else if (t.getDate() === 1) it.lab = MONTH_SHORT[t.getMonth()]; });
         d = { items, agg, until: res?.published_until ? new Date(+new Date(res.published_until) + 9e5) : null };
       } else if (h.kind === "months") {
@@ -739,7 +740,7 @@ class PGEHistory extends HTMLElement {
       const at = t => `${dayShort(t)} ${t.getFullYear()}, ${pad(t.getHours())}:${pad(t.getMinutes())}`;
       const top = nums.length ? nums.reduce((a, b) => Number(b.hi ?? b.v) > Number(a.hi ?? a.v) ? b : a) : null;
       const bot = nums.length ? nums.reduce((a, b) => Number(b.lo ?? b.v) < Number(a.lo ?? a.v) ? b : a) : null;
-      return box(d.agg === "raw" ? "Średnia w okresie" : "Średnia w okresie (z 15-min)", pricePL(avg)) + box("Najdrożej", top ? pricePL(top.hi ?? top.v) : "—", top ? at(top.thi || new Date(top.t0)) : "") + box("Najtaniej", bot ? pricePL(bot.lo ?? bot.v) : "—", bot ? at(bot.tlo || new Date(bot.t0)) : "") + box(nowI ? "Teraz" : "Opublikowane do", nowI ? pricePL(nowI.v) : d.until ? stamp(d.until) : "—", nowI && d.until ? `opublikowane do ${stamp(d.until)}` : "");
+      return box("Średnia w okresie", pricePL(avg), `z ${nums.length} cen 15-min`) + box("Najdrożej", top ? pricePL(top.hi ?? top.v) : "—", top ? at(top.thi || new Date(top.t0)) : "") + box("Najtaniej", bot ? pricePL(bot.lo ?? bot.v) : "—", bot ? at(bot.tlo || new Date(bot.t0)) : "") + box(nowI ? "Teraz" : "Opublikowane do", nowI ? pricePL(nowI.v) : d.until ? stamp(d.until) : "—", nowI && d.until ? `opublikowane do ${stamp(d.until)}` : "");
     }
     const z = g12Zone(new Date());
     return box("Strefa dzienna (S1)", pricePL(d.pg.s1)) + box("Strefa nocna (S2)", pricePL(d.pg.s2)) + box("Teraz", z === "s1" ? "dzienna" : "nocna", pricePL(d.pg[z])) + box("Strefa nocna", "22–6 + 13–15", "lato (IV–IX): 15–17");
@@ -773,7 +774,23 @@ class PGEHistory extends HTMLElement {
     const svg = q(".hs"), tip = q(".tip");
     if (!svg) return;
     const hl = svg.querySelector(".hl");
-    svg.querySelectorAll(".hit").forEach(el => {
+    const ov = svg.querySelector(".ov");
+    if (ov) { // one overlay: find the real 15-min price under the cursor (binary search by time)
+      const its = d.items, L = +ov.dataset.l, R = +ov.dataset.r, W = +ov.dataset.w, a = +ov.dataset.t0, b = +ov.dataset.t1;
+      let last = -1;
+      ov.onmousemove = e => {
+        const bx = svg.getBoundingClientRect(), fx = (e.clientX - bx.left) / bx.width * W, t = a + (fx - L) / (W - L - R) * (b - a);
+        let lo = 0, hi = its.length - 1;
+        while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (its[mid].t0 <= t) lo = mid; else hi = mid - 1; }
+        const it = its[lo]; if (!it || t < it.t0 || t >= it.t1 || lo === last) { if (!it || t < it.t0 || t >= it.t1) { tip.hidden = true; hl.style.display = "none"; last = -1; } return; }
+        last = lo;
+        const x = L + ((it.t0 + it.t1) / 2 - a) / (b - a) * (W - L - R);
+        hl.style.display = ""; hl.setAttribute("x1", x); hl.setAttribute("x2", x);
+        tip.innerHTML = `<div class="tt">${esc(it.tip)}${it.fut ? " · przyszłość" : ""}</div><b>${isNum(it.v) ? h.fmt(it.v) : "brak danych"}</b>${it.x ? `<div class="mut">${esc(it.x)}</div>` : ""}`;
+        tip.hidden = false; tip.style.left = `clamp(100px, ${x / 10}%, calc(100% - 100px))`;
+      };
+    }
+    svg.querySelectorAll(".hit:not(.ov)").forEach(el => {
       const it = d.items[Number(el.dataset.i)];
       el.onmouseenter = () => {
         const x = Number(el.getAttribute("x")) + Number(el.getAttribute("width")) / 2;

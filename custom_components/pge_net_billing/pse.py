@@ -122,6 +122,8 @@ async def prices_between(hass, start, end):
 
 def aggregate(prices, agg):
     """rows [start_iso, mean, min, max]; agg = raw (15 min) | hour | day (Warsaw local)."""
+    if agg == 'raw':  # real 15-min prices as published by PSE, no aggregation
+        return [[slot, round(val, 5)] for slot, val in sorted(prices.items())]
     groups = {}
     for slot, val in prices.items():
         t = datetime.fromisoformat(slot)
