@@ -3,9 +3,11 @@ from pathlib import Path
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.components import frontend, panel_custom
-from homeassistant.components.http import StaticPathConfig
+from datetime import date
+from homeassistant.components.http import HomeAssistantView, StaticPathConfig
 from .const import DOMAIN, VERSION
 from .coordinator import PGELedger
+from .pse import aggregate, prices_between
 
 PLATFORMS = ["sensor"]
 # ?v= busts the browser cache on every release (static path is served without cache headers,
@@ -19,7 +21,32 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Serve the custom Lovelace card; add resource in dashboard resources if needed."""
     await hass.http.async_register_static_paths([StaticPathConfig("/pge_net_billing_static", str(Path(__file__).parent / "frontend"), False)])
     frontend.add_extra_js_url(hass, PANEL_URL)
+    hass.http.register_view(RCEHistoryView(hass))
     return True
+
+
+class RCEHistoryView(HomeAssistantView):
+    """GET /api/pge_net_billing/rce?start=YYYY-MM-DD&end=YYYY-MM-DD&agg=raw|hour|day
+    RCE history plus already published future prices (tomorrow), for the dashboard modal."""
+    url = "/api/pge_net_billing/rce"
+    name = "api:pge_net_billing:rce"
+    requires_auth = True
+
+    def __init__(self, hass):
+        self.hass = hass
+
+    async def get(self, request):
+        try:
+            start = date.fromisoformat(request.query["start"])
+            end = date.fromisoformat(request.query["end"])
+        except (KeyError, ValueError):
+            return self.json_message("start/end must be YYYY-MM-DD", 400)
+        agg = request.query.get("agg", "raw")
+        if agg not in ("raw", "hour", "day"):
+            agg = "raw"
+        prices = await prices_between(self.hass, start, end)
+        last = max(prices) if prices else None
+        return self.json({"rows": aggregate(prices, agg), "agg": agg, "published_until": last})
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ledger = PGELedger(hass, entry)

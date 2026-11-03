@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.4.4
+# PGE Net-Billing v1.5.0
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -16,6 +16,14 @@ Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing 
 Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Nowe w v1.5.0 – kliknij kafel = historia (i przyszłość, jeśli jest)
+- Kafle pod wykresem (Pobór, Oddanie, Wartość sprzedaży, Koszt zakupu, Zysk / strata) oraz dolne (Koszt zakupu, Wartość oddanej, Aktualna cena RCE, Taryfa dystrybucji) są klikalne – otwiera się okno (modal) z wykresem historii, przełącznikiem Dzień / Tydzień / Miesiąc / Rok, strzałkami ‹ › i „Dzisiaj”. Zamknięcie: ×, Esc lub klik obok.
+- **Cena RCE**: pełna historia z PSE (RCE-PLN, 15 min; miesiąc = średnie godzinowe, rok = dzienne, w dymku min / maks) + **ceny na jutro**, gdy PSE je opublikuje (ok. 14:30). Przyszłość linią przerywaną, linia „teraz”, nieopublikowany okres zaszarzony, przycisk „Jutro”.
+- **Taryfa G12**: strefy dzienna / nocna godzina po godzinie z ceną brutto – wstecz i do przodu (harmonogram jest znany z góry; ceny wg obecnych stawek z konfiguracji).
+- **Energia i pieniądze**: słupki z Recordera HA, suma, średnia, najwięcej / najmniej; klik w słupek = wejście w dzień / miesiąc. Przyszłości tu nie ma – to pomiary.
+- Integracja pobiera ceny RCE na jutro (od 14:00, co godzinę aż się pojawią); sensor `Aktualna RCE` ma nowy atrybut `tomorrow`, sparkline w kafelku RCE pokazuje dziś + jutro.
+- Nowy endpoint `GET /api/pge_net_billing/rce?start=RRRR-MM-DD&end=RRRR-MM-DD&agg=raw|hour|day` (wymaga logowania HA; maks. 400 dni; minione dni cache'owane w pamięci).
 
 ## Nowe w v1.4.0 – wykres „Przepływ energii (wybrany okres)”
 - Zakres: Dzień (słupki godzinowe) / Tydzień / Miesiąc / Rok (słupki miesięczne), własny zakres Od–Do, strzałki ‹ › przesuwają okres, „Dzisiaj” wraca do bieżącego.

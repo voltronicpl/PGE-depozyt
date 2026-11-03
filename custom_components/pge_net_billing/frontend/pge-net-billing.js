@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.4.4 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.5.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.4.4";
+const VERSION = "1.5.0";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -154,6 +154,7 @@ function buildModel(hass, ids, raw, offset) {
 
   const rce = st("rce_current");
   const rceToday = (rce?.attributes?.today || []).map(x => Number(x[1])).filter(isNum);
+  const rceTomorrow = (rce?.attributes?.tomorrow || []).map(x => Number(x[1])).filter(isNum);
   const rceSlot = rce?.attributes?.slot ? new Date(rce.attributes.slot) : null;
   const updated = KEYS.map(k => st(k)?.last_updated).filter(Boolean).map(Date.parse).filter(isNum);
 
@@ -165,7 +166,7 @@ function buildModel(hass, ids, raw, offset) {
       imp: s30(imp), exp: s30(r => r.export_kwh), sell: s30(r => r.export_value), cost: s30(r => r.energy_cost),
       bal: s30(r => isNum(r.export_kwh) && isNum(imp(r)) ? r.export_kwh - imp(r) : null),
     },
-    rce: val("rce_current"), rceToday, rceSlot,
+    rce: val("rce_current"), rceToday, rceTomorrow, rceSlot,
     updated: updated.length ? new Date(Math.max(...updated)) : null,
     todayV: (() => { const r = days[dayKey(today0)]; return isCurrent && r ? { imp: imp(r), exp: isNum(r.export_kwh) ? Number(r.export_kwh) : null, cost: isNum(r.energy_cost) ? r.energy_cost * (1 + vat) : null, sell: isNum(r.export_value) ? Number(r.export_value) : null } : null; })(),
     found: Object.values(ids).some(Boolean),
@@ -372,6 +373,7 @@ h3{margin:0;font-size:16px;font-weight:700}h3 span{font-weight:400;color:var(--m
 .bot{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-top:13px}.bot .box{padding:12px 14px 8px;min-height:110px;display:flex;gap:14px}.bot .ic{width:36px;height:36px;padding:5px}.bot .b-body{flex:1;min-width:0;display:flex;flex-direction:column}
 .b-val{font-size:clamp(19px,1.7vw,25px);font-weight:700;margin-top:6px;white-space:nowrap}.b-note{font-size:13px;color:var(--mut2)}.bot .delta{font-size:15px}.b-foot{display:flex;align-items:flex-end;gap:6px;margin-top:8px;flex:1;position:relative;min-height:48px}.b-foot>div:first-child{align-self:flex-start}.b-foot>div:first-child{flex:1;position:relative;z-index:1}.b-foot .b-note{white-space:nowrap;font-size:12px}.b-foot .spark-wrap{position:absolute;right:0;bottom:0;width:42%}
 .zone{display:flex;align-items:center;gap:10px;margin-top:auto}.zone .ic{width:34px;height:34px;padding:4px}
+.hist{cursor:pointer;transition:border-color .15s}.hist:hover,.hist:focus-visible{border-color:#3b8cff;outline:none}
 .tables{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:13px}.tables .box{padding:16px 16px 6px}
 table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}th{font-weight:400;color:var(--mut2);text-align:right;padding:6px 6px;background:#0f2536}td{text-align:right;padding:6px 6px;border-bottom:1px solid #132b3c;white-space:nowrap}tr:last-child td{border-bottom:0}th:first-child,td:first-child{text-align:left}
 .aside h2{font-size:19px;font-weight:500;margin:6px 0 16px}.aside .tile{margin-bottom:14px}
@@ -560,7 +562,7 @@ function balView(v) {
 }
 function chartCard(ch) {
   const r = ch.r, endIncl = addDays(r.end, -1), now = new Date();
-  const tile = (k, ic, tone, label, value, cls, color, tip = "") => `<div class="fc-tile"${tip ? ` title="${esc(tip)}"` : ""}><div class="fc-tile-top">${icon(ic, tone, "ic-plain fc-ic")}<div class="fc-tile-txt"><div class="muted2">${label}</div><div class="fc-val ${typeof cls === "function" ? cls(ch.tot[k]) : cls}" data-c="${k}">${value(ch.tot[k])}</div></div><div class="fc-spark">${barSpark(ch.buckets.map(b => b.v?.[k]), color, 90, 50, k === "profit")}</div></div><div class="fc-avg"><span class="muted2">${ch.avgLabel}</span><b data-a="${k}">${value(ch.avg[k])}</b></div></div>`;
+  const tile = (k, ic, tone, label, value, cls, color, tip = "") => `<div class="fc-tile hist" data-hist="${k}" tabindex="0" role="button" title="${esc((tip ? tip + " " : "") + "Kliknij: historia")}"><div class="fc-tile-top">${icon(ic, tone, "ic-plain fc-ic")}<div class="fc-tile-txt"><div class="muted2">${label}</div><div class="fc-val ${typeof cls === "function" ? cls(ch.tot[k]) : cls}" data-c="${k}">${value(ch.tot[k])}</div></div><div class="fc-spark">${barSpark(ch.buckets.map(b => b.v?.[k]), color, 90, 50, k === "profit")}</div></div><div class="fc-avg"><span class="muted2">${ch.avgLabel}</span><b data-a="${k}">${value(ch.avg[k])}</b></div></div>`;
   return `<section class="box fc">
   <div class="fc-head"><h3>Przepływ energii <span>(wybrany okres)</span></h3><div class="legend"><span><b style="background:var(--o)"></b>Pobór z sieci</span><span><b style="background:var(--g)"></b>Oddanie do sieci</span></div></div>
   <div class="fc-ctrl">
@@ -584,6 +586,193 @@ function chartCard(ch) {
   </div>
 </section>`;
 }
+
+/* ---------- history modal: click a tile -> history + already published future (v1.5.0) ---------- */
+const g12Zone = d => { const mo = d.getMonth() + 1, h = d.getHours(), summer = mo >= 4 && mo <= 9; return h >= 22 || h < 6 || (summer ? h >= 15 && h < 17 : h >= 13 && h < 15) ? "s2" : "s1"; };
+const pricePL = v => isNum(v) ? NF4.format(v) + " zł/kWh" : "—";
+const HIST = {
+  imp: { title: "Pobór z sieci", tone: TONE.orange, kind: "energy", fmt: v => kwh(v), note: "Pomiary z licznika (Recorder HA). Przyszłości nie ma – to tylko to, co już przepłynęło." },
+  exp: { title: "Oddanie do sieci", tone: TONE.green, kind: "energy", fmt: v => kwh(v), note: "Pomiary z licznika (Recorder HA). Przyszłości nie ma – to tylko to, co już przepłynęło." },
+  sell: { title: "Wartość sprzedaży (RCE)", tone: TONE.blue, kind: "energy", fmt: v => zl(v), note: "Oddana energia × RCE × współczynnik. Liczone dla minionych okresów." },
+  cost: { title: "Koszt zakupu energii (brutto)", tone: TONE.red, kind: "energy", fmt: v => zl(v), note: "Energia czynna brutto, bez dystrybucji i opłat stałych. Liczone dla minionych okresów." },
+  profit: { title: "Zysk / strata", tone: TONE.green, kind: "energy", fmt: v => zl(v, true), signed: true, note: "Wartość sprzedaży (RCE) − koszt zakupu energii brutto." },
+  rce: { title: "Cena RCE", tone: TONE.blue, kind: "rce", fmt: pricePL, note: "Ceny z PSE (RCE-PLN). Linia ciągła = historia, przerywana = ceny już opublikowane na przyszłość (D+1 ok. 14:30)." },
+  tariff: { title: "Taryfa G12 – cena za kWh brutto", tone: TONE.orange, kind: "tariff", fmt: pricePL, note: "Harmonogram stref G12 jest znany z góry. Cena = energia + dystrybucja zmienna, brutto, wg obecnych stawek z konfiguracji (wstecz pokazuje dzisiejsze stawki)." },
+};
+const H_MODES = { energy: MODES, rce: MODES, tariff: MODES.slice(0, 3) };
+
+function niceStep(span, n = 5) {
+  const raw = Math.max(span, 1e-9) / n, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+}
+// items: [{t0, t1, v, fut, lab, lab2}] – x is TIME, so gaps (unpublished prices) stay visible
+function histSvg(items, r, o) {
+  const W = 1000, H = 320, L = 62, R = 10, T = 18, B = 50, t0 = +r.start, t1 = +r.end, now = Date.now();
+  const X = t => L + (t - t0) / (t1 - t0) * (W - L - R);
+  const vals = items.filter(i => isNum(i.v)).map(i => Number(i.v));
+  let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+  if (o.type === "step" && vals.length) { lo = Math.min(lo, ...vals); hi = Math.max(...vals); if (lo > 0) lo = 0; }
+  const step = niceStep(hi - lo || 1); lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step || step;
+  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  let g = "";
+  for (let v = lo; v <= hi + step / 1e6; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="${Math.abs(v) < step / 1e6 ? "zero" : "grid"}"/><text x="${L - 8}" y="${Y(v) + 5}" text-anchor="end" class="ax">${o.axis(v)}</text>`;
+  if (o.until && +o.until < t1) g += `<rect x="${X(Math.max(t0, +o.until))}" y="${T}" width="${X(t1) - X(Math.max(t0, +o.until))}" height="${H - T - B}" class="unpub"/><text x="${(X(Math.max(t0, +o.until)) + X(t1)) / 2}" y="${T + 18}" text-anchor="middle" class="ax">jeszcze nieopublikowane</text>`;
+  let marks = "";
+  if (o.type === "bar") {
+    marks = items.map((it, i) => {
+      if (!isNum(it.v)) return "";
+      const x0 = X(it.t0), w = Math.max(1, (X(it.t1) - x0) * .64), y = Y(Math.max(0, it.v)), h = Math.abs(Y(it.v) - Y(0));
+      return `<rect class="mk" data-i="${i}" x="${x0 + (X(it.t1) - x0 - w) / 2}" y="${y}" width="${w}" height="${Math.max(h, .5)}" rx="${Math.min(3, w / 3)}" fill="${o.signed && it.v < 0 ? TONE.red : o.color}"/>`;
+    }).join("");
+  } else {
+    const seg = fut => { let d = "", open = false;
+      items.forEach(it => {
+        if (!isNum(it.v) || it.fut !== fut) { open = false; return; }
+        const y = Y(it.v); d += open ? `L${X(it.t0)} ${y}H${X(it.t1)}` : `M${X(it.t0)} ${y}H${X(it.t1)}`; open = true;
+      }); return d; };
+    const past = seg(false), fut = seg(true);
+    marks = `${past ? `<path d="${past}" fill="none" stroke="${o.color}" stroke-width="2.2"/>` : ""}${fut ? `<path d="${fut}" fill="none" stroke="${o.color}" stroke-width="2.2" stroke-dasharray="7 5" opacity=".9"/>` : ""}`;
+  }
+  const labs = items.map(it => it.lab ? `<text x="${X(it.t0)}" y="${H - B + 20}" text-anchor="middle" class="xl">${it.lab}</text>${it.lab2 ? `<text x="${X(it.t0)}" y="${H - B + 38}" text-anchor="middle" class="xl">${it.lab2}</text>` : ""}` : "").join("");
+  const nowL = now > t0 && now < t1 ? `<line x1="${X(now)}" x2="${X(now)}" y1="${T}" y2="${H - B}" class="nowl"/><text x="${X(now) + 5}" y="${T + 12}" class="nowt">teraz</text>` : "";
+  const hits = items.map((it, i) => `<rect class="hit" data-i="${i}" x="${X(it.t0)}" y="${T}" width="${Math.max(1, X(it.t1) - X(it.t0))}" height="${H - T - B}" fill="transparent"/>`).join("");
+  return `<svg class="hs" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"><text x="4" y="12" class="unit">${o.unit}</text>${g}${marks}${labs}${nowL}<line class="hl" y1="${T}" y2="${H - B}" style="display:none"/>${hits}</svg>`;
+}
+
+class PGEHistory extends HTMLElement {
+  constructor() { super(); this.attachShadow({ mode: "open" }); this._key = e => { if (e.key === "Escape") this.close(); }; }
+  open(panel, key) {
+    this._p = panel; this._k = key; const h = HIST[key], now = new Date();
+    const pr = panel._range;
+    this._r = h.kind === "energy" && pr ? pr : makeRange(h.kind === "rce" && now.getHours() >= 15 ? "week" : "day", now);
+    if (h.kind === "tariff" && !H_MODES.tariff.some(x => x[0] === this._r.mode)) this._r = makeRange("day", now);
+    document.addEventListener("keydown", this._key);
+    this._load();
+  }
+  close() { document.removeEventListener("keydown", this._key); this.remove(); }
+  _set(r) { if (r && r.start < r.end) { this._r = r; this._load(); } }
+  _limit() { // last day a range may start on
+    const h = HIST[this._k], t = new Date(), d0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    return h.kind === "energy" ? t : h.kind === "rce" ? addDays(d0, 1) : addDays(d0, 400);
+  }
+  async _load() {
+    const r = this._r, h = HIST[this._k], p = this._p, hass = p._hass;
+    this._d = null; this._draw();
+    let d;
+    try {
+      if (h.kind === "energy") {
+        const raw = r.start < new Date() ? await loadStats(hass, p._ids, r.start, new Date(Math.min(r.end, Date.now() + 36e5)), r.period) : {};
+        const ch = buildChart(hass, p._ids, raw || {}, r, p._model());
+        d = { items: ch.buckets.map(b => ({ t0: +b.d, t1: +b.nx, v: b.v?.[this._k], fut: b.future, d: b.d, lab: b.l1, lab2: b.l2, tip: b.tip })), per: ch.per, tot: ch.tot[this._k], avg: ch.avg[this._k], avgLabel: ch.avgLabel, err: !raw };
+        if (ch.buckets.length > 40) { const ev = Math.ceil(ch.buckets.length / 24); d.items.forEach((it, i) => { if (i % ev) it.lab = it.lab2 = ""; }); }
+      } else if (h.kind === "rce") {
+        const days = (r.end - r.start) / 864e5, agg = days > 62 ? "day" : days > 8 ? "hour" : "raw";
+        const res = await hass.callApi("GET", `pge_net_billing/rce?start=${isoDate(r.start)}&end=${isoDate(addDays(r.end, -1))}&agg=${agg}`);
+        const len = agg === "raw" ? 9e5 : agg === "hour" ? 36e5 : 864e5, now = Date.now();
+        const items = (res?.rows || []).map(x => { const t = new Date(x[0]); const t1 = agg === "day" ? +addDays(t, 1) : +t + len;
+          return { t0: +t, t1, v: x[1], lo: x[2], hi: x[3], fut: +t > now, tip: agg === "raw" ? `${dayShort(t)}, ${pad(t.getHours())}:${pad(t.getMinutes())}–${pad(new Date(t1).getHours())}:${pad(new Date(t1).getMinutes())}` : agg === "hour" ? `${dayShort(t)}, ${pad(t.getHours())}:00–${pad((t.getHours() + 1) % 24)}:00` : `${dayShort(t)} ${t.getFullYear()}` }; });
+        items.forEach(it => { const t = new Date(it.t0);
+          if (agg === "raw") { if (days <= 1.1 ? t.getMinutes() === 0 && t.getHours() % 3 === 0 : t.getMinutes() === 0 && t.getHours() === 0) it.lab = days <= 1.1 ? pad(t.getHours()) + ":00" : dayShort(t); }
+          else if (agg === "hour") { if (t.getHours() === 0 && t.getDate() % 2 === 1) it.lab = pad(t.getDate()); }
+          else if (t.getDate() === 1) it.lab = MONTH_SHORT[t.getMonth()]; });
+        d = { items, agg, until: res?.published_until ? new Date(+new Date(res.published_until) + 9e5) : null };
+      } else {
+        const tr = p._model().tariff, pg = tr?.price_gross || {}, items = [], now = Date.now();
+        for (let t = new Date(r.start); t < r.end; t = new Date(+t + 36e5)) {
+          const z = g12Zone(t);
+          items.push({ t0: +t, t1: +t + 36e5, v: isNum(pg[z]) ? Number(pg[z]) : null, z, fut: +t + 36e5 > now, tip: `${dayShort(t)}, ${pad(t.getHours())}:00–${pad((t.getHours() + 1) % 24)}:00 · ${z === "s1" ? "strefa dzienna" : "strefa nocna"}` });
+        }
+        const days = (r.end - r.start) / 864e5;
+        items.forEach(it => { const t = new Date(it.t0); if (days <= 1.1 ? t.getHours() % 3 === 0 : t.getHours() === 0 && (days <= 8 || t.getDate() % 2 === 1)) it.lab = days <= 1.1 ? pad(t.getHours()) + ":00" : days <= 8 ? dayShort(t) : pad(t.getDate()); });
+        d = { items, pg, name: tr?.name || "G12" };
+      }
+    } catch (e) { console.warn("PGE Net-Billing: history", e); d = { error: e?.body?.message || e?.message || String(e) }; }
+    if (r !== this._r) return;
+    this._d = d; this._draw();
+  }
+  _summary(d, h) {
+    const box = (l, v, s = "") => `<div class="sm"><span>${l}</span><b>${v}</b>${s ? `<small>${s}</small>` : ""}</div>`;
+    const nums = d.items.filter(i => isNum(i.v));
+    const ext = f => nums.length ? nums.reduce((a, b) => f(b.v, a.v) ? b : a) : null;
+    const mx = ext((a, b) => a > b), mn = ext((a, b) => a < b);
+    if (h.kind === "energy") return box("Suma w okresie", h.fmt(d.tot)) + box(d.avgLabel, h.fmt(d.avg)) + box("Najwięcej", mx ? h.fmt(mx.v) : "—", mx?.tip || "") + box("Najmniej", mn ? h.fmt(mn.v) : "—", mn?.tip || "");
+    if (h.kind === "rce") {
+      const avg = nums.length ? nums.reduce((s, i) => s + Number(i.v), 0) / nums.length : null;
+      const nowI = nums.find(i => i.t0 <= Date.now() && i.t1 > Date.now());
+      return box("Średnia w okresie", pricePL(avg)) + box("Najdrożej", mx ? pricePL(mx.v) : "—", mx?.tip || "") + box("Najtaniej", mn ? pricePL(mn.v) : "—", mn?.tip || "") + box(nowI ? "Teraz" : "Opublikowane do", nowI ? pricePL(nowI.v) : d.until ? stamp(d.until) : "—", nowI && d.until ? `opublikowane do ${stamp(d.until)}` : "");
+    }
+    const z = g12Zone(new Date());
+    return box("Strefa dzienna (S1)", pricePL(d.pg.s1)) + box("Strefa nocna (S2)", pricePL(d.pg.s2)) + box("Teraz", z === "s1" ? "dzienna" : "nocna", pricePL(d.pg[z])) + box("Strefa nocna", "22–6 + 13–15", "lato (IV–IX): 15–17");
+  }
+  _draw() {
+    const h = HIST[this._k], r = this._r, d = this._d, lim = this._limit(), nx = shiftRange(r, 1);
+    const unit = h.kind === "energy" ? (this._k === "imp" || this._k === "exp" ? "kWh" : "zł") : "zł/kWh";
+    const axis = v => h.kind === "energy" ? String(+v.toFixed(2)).replace(".", ",") : v.toFixed(2).replace(".", ",");
+    let body;
+    if (!d) body = `<div class="nohist">Ładowanie…</div>`;
+    else if (d.error) body = `<div class="nohist">Nie udało się pobrać danych: ${esc(d.error)}</div>`;
+    else if (!d.items.some(i => isNum(i.v))) body = `<div class="nohist">Brak danych w tym okresie${h.kind === "rce" && r.start > new Date() ? " – PSE jeszcze nie opublikowało cen" : ""}</div>`;
+    else body = histSvg(d.items, r, { type: h.kind === "energy" ? "bar" : "step", color: h.tone, signed: h.signed, unit, axis, until: h.kind === "rce" ? d.until : null });
+    this.shadowRoot.innerHTML = `<style>${HCSS}</style><div class="bd" part="backdrop"><div class="mo" role="dialog" aria-modal="true" aria-label="${esc(h.title)}">
+  <div class="mh"><h3>${esc(h.title)}</h3><span class="rl">${esc(rangeLabel(r))}</span><button class="x" aria-label="Zamknij"><ha-icon icon="mdi:close"></ha-icon></button></div>
+  <div class="ctl"><button class="b ar" data-s="-1" aria-label="Wcześniej"><ha-icon icon="mdi:chevron-left"></ha-icon></button><button class="b ar" data-s="1" ${nx.start > lim ? "disabled" : ""} aria-label="Później"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+    ${H_MODES[h.kind].map(([k, l]) => `<button class="b${r.mode === k ? " on" : ""}" data-m="${k}">${l}</button>`).join("")}<button class="b" data-t="1">Dzisiaj</button>${h.kind === "rce" ? `<button class="b" data-tm="1">Jutro</button>` : ""}</div>
+  <div class="pl">${body}<div class="tip" hidden></div></div>
+  ${d && !d.error && d.items ? `<div class="sms">${this._summary(d, h)}</div>` : ""}
+  <div class="nt">${esc(h.note)}${h.kind === "energy" && d?.per && d.per !== "hour" ? " Kliknij słupek, aby wejść w szczegóły." : ""}</div>
+</div></div>`;
+    const S = this.shadowRoot, q = s => S.querySelector(s);
+    q(".bd").onclick = e => { if (e.target === q(".bd")) this.close(); };
+    q(".x").onclick = () => this.close();
+    S.querySelectorAll("[data-s]").forEach(b => b.onclick = () => this._set(shiftRange(r, Number(b.dataset.s))));
+    S.querySelectorAll("[data-m]").forEach(b => b.onclick = () => { const n = new Date(); this._set(makeRange(b.dataset.m, n >= r.start && n < r.end ? n : r.start)); });
+    q("[data-t]").onclick = () => this._set(makeRange(r.mode === "custom" ? "day" : r.mode, new Date()));
+    if (q("[data-tm]")) q("[data-tm]").onclick = () => this._set(makeRange("day", addDays(new Date(), 1)));
+    const svg = q(".hs"), tip = q(".tip");
+    if (!svg) return;
+    const hl = svg.querySelector(".hl");
+    svg.querySelectorAll(".hit").forEach(el => {
+      const it = d.items[Number(el.dataset.i)];
+      el.onmouseenter = () => {
+        const x = Number(el.getAttribute("x")) + Number(el.getAttribute("width")) / 2;
+        hl.style.display = ""; hl.setAttribute("x1", x); hl.setAttribute("x2", x);
+        const range = isNum(it.lo) && it.hi !== it.lo ? `<div class="mut">min ${pricePL(it.lo)} · maks ${pricePL(it.hi)}</div>` : "";
+        tip.innerHTML = `<div class="tt">${esc(it.tip)}${it.fut ? " · przyszłość" : ""}</div><b>${isNum(it.v) ? h.fmt(it.v) : "brak danych"}</b>${range}`;
+        tip.hidden = false; tip.style.left = `clamp(100px, ${x / 10}%, calc(100% - 100px))`;
+      };
+      if (h.kind === "energy" && !it.fut && (d.per === "day" || d.per === "month")) el.onclick = () => this._set(makeRange(d.per === "day" ? "day" : "month", it.d));
+    });
+    svg.onmouseleave = () => { tip.hidden = true; hl.style.display = "none"; };
+  }
+}
+if (!customElements.get("pge-net-billing-history")) customElements.define("pge-net-billing-history", PGEHistory);
+function openHistory(panel, key) {
+  if (!HIST[key]) return;
+  document.querySelectorAll("pge-net-billing-history").forEach(e => e.close());
+  const el = document.createElement("pge-net-billing-history");
+  document.body.appendChild(el);
+  el.open(panel, key);
+}
+const HCSS = `
+:host{position:fixed;inset:0;z-index:9999;font-family:var(--paper-font-body1_-_font-family,Roboto),Roboto,"Segoe UI",Arial,sans-serif;color:#eaf2f9}
+*{box-sizing:border-box}ha-icon{--mdc-icon-size:100%;display:inline-flex;width:100%;height:100%}
+.bd{position:absolute;inset:0;background:rgba(2,8,14,.72);display:flex;align-items:center;justify-content:center;padding:16px}
+.mo{width:min(1100px,100%);max-height:100%;overflow:auto;background:linear-gradient(150deg,#0c1f2e,#081826);border:1px solid #1d3a55;border-radius:16px;padding:16px 18px 14px}
+.mh{display:flex;align-items:center;gap:12px}.mh h3{margin:0;font-size:18px;font-weight:700}.rl{color:#9db2c3;font-size:14px;flex:1}
+.x{width:34px;height:34px;padding:6px;border-radius:10px;border:1px solid #1d3a55;background:#0d2131;color:#c9d7e2;cursor:pointer}
+.ctl{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 6px}.b{height:34px;padding:0 13px;border-radius:9px;border:1px solid #1d3a55;background:#0d2131;color:#c9d7e2;font:inherit;font-size:14px;cursor:pointer}
+.b.ar{width:34px;padding:7px}.b.on{background:#2d7cf6;border-color:#2d7cf6;color:#fff;font-weight:700}.b:disabled{opacity:.35;cursor:default}.b:not(:disabled):hover{border-color:#3b8cff}
+.pl{position:relative;min-height:220px}.hs{width:100%;height:auto;display:block}
+.grid{stroke:#1a3246;stroke-width:1}.zero{stroke:#3b5a73;stroke-width:1.2}.ax,.xl,.unit{fill:#9db2c3;font-size:13px}.unit{font-size:14px}
+.unpub{fill:#3b8cff;opacity:.06}.nowl{stroke:#ffad2e;stroke-width:1.2;stroke-dasharray:3 3}.nowt{fill:#ffad2e;font-size:12px}.hl{stroke:#c9d7e2;stroke-width:1;opacity:.5}.hit{cursor:crosshair}
+.tip{position:absolute;top:6px;transform:translateX(-50%);background:#06111b;border:1px solid #2a4a66;border-radius:10px;padding:8px 11px;font-size:13px;pointer-events:none;white-space:nowrap}
+.tip .tt{color:#9db2c3;margin-bottom:3px}.tip b{font-size:16px}.tip .mut{color:#9db2c3;font-size:12px;margin-top:2px}
+.nohist{display:grid;place-items:center;min-height:220px;color:#9db2c3}
+.sms{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:8px}
+.sm{border:1px solid #17304a;border-radius:12px;background:#0a1a27;padding:10px 12px;min-width:0}.sm span{display:block;color:#c9d7e2;font-size:13px}.sm b{display:block;font-size:19px;margin-top:3px;white-space:nowrap}.sm small{display:block;color:#9db2c3;font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nt{color:#9db2c3;font-size:12.5px;margin-top:10px}
+@media(max-width:700px){.sms{grid-template-columns:1fr 1fr}.mo{padding:12px}}
+`;
 
 class PGEPanel extends PGEBase {
   set panel(p) { this._panelConfig = p?.config || {}; }
@@ -717,13 +906,13 @@ class PGEPanel extends PGEBase {
   ${chartCard(ch)}
 
   <section class="bot">
-    <div class="box">${icon("cart", "red", "ic-plain")}<div class="b-body"><div class="muted2">Koszt zakupu energii</div><div class="b-val">${zl(m.month.cost)}</div>
+    <div class="box hist" data-hist="cost" tabindex="0" role="button" title="Kliknij: historia">${icon("cart", "red", "ic-plain")}<div class="b-body"><div class="muted2">Koszt zakupu energii</div><div class="b-val">${zl(m.month.cost)}</div>
       <div class="b-foot"><div>${delta(m.month.cost, m.prev.cost, true)}${isNum(m.prev.cost) && m.prev.cost ? `<div class="b-note">w porównaniu z ${prevI}</div>` : ""}</div>${sw(m.spark.cost, TONE.red, 90, 44)}</div></div></div>
-    <div class="box">${icon("trending-up", "green", "ic-plain")}<div class="b-body"><div class="muted2">Wartość oddanej energii</div><div class="b-val">${zl(m.month.sell)}</div>
+    <div class="box hist" data-hist="sell" tabindex="0" role="button" title="Kliknij: historia">${icon("trending-up", "green", "ic-plain")}<div class="b-body"><div class="muted2">Wartość oddanej energii</div><div class="b-val">${zl(m.month.sell)}</div>
       <div class="b-foot"><div>${delta(m.month.sell, m.prev.sell, false)}${isNum(m.prev.sell) && m.prev.sell ? `<div class="b-note">w porównaniu z ${prevI}</div>` : ""}</div>${sw(m.spark.sell, TONE.green, 90, 44)}</div></div></div>
-    <div class="box">${icon("chart-bar", "blue", "ic-plain")}<div class="b-body"><div class="muted2">Aktualna cena RCE</div><div class="b-val">${isNum(m.rce) ? NF4.format(m.rce) + " zł/kWh" : "—"}</div><div class="b-note">${esc(rceSlot)}</div>
-      <div class="b-foot" style="margin-top:auto">${spark(m.rceToday, TONE.blue, 200, 40)}</div></div></div>
-    <div class="box">${icon("clock-outline", "blue", "ic-plain")}<div class="b-body"><div class="muted2">Taryfa dystrybucji</div><div class="b-val">${esc(tariff?.name || "G12")}</div>
+    <div class="box hist" data-hist="rce" tabindex="0" role="button" title="Kliknij: historia i ceny na jutro">${icon("chart-bar", "blue", "ic-plain")}<div class="b-body"><div class="muted2">Aktualna cena RCE</div><div class="b-val">${isNum(m.rce) ? NF4.format(m.rce) + " zł/kWh" : "—"}</div><div class="b-note">${esc(rceSlot)}</div>
+      <div class="b-foot" style="margin-top:auto">${spark(m.rceToday.concat(m.rceTomorrow), TONE.blue, 200, 40)}</div></div></div>
+    <div class="box hist" data-hist="tariff" tabindex="0" role="button" title="Kliknij: strefy i ceny – historia i przyszłość">${icon("clock-outline", "blue", "ic-plain")}<div class="b-body"><div class="muted2">Taryfa dystrybucji</div><div class="b-val">${esc(tariff?.name || "G12")}</div>
       <div class="b-note">Obecnie: ${zoneKey === "s1" ? "strefa dzienna" : zoneKey === "s2" ? "strefa nocna" : "—"}</div>
       <div class="zone" title="energia + dystrybucja zmienna, brutto">${icon(zoneKey === "s2" ? "weather-night" : "white-balance-sunny", zoneKey === "s2" ? "blue" : "orange", "ic-plain")}<div><div class="b-val" style="margin:0;font-size:18px">${isNum(zPrice) ? NF4.format(zPrice) + " zł/kWh" : "—"}</div></div></div></div></div>
   </section>
@@ -738,6 +927,10 @@ class PGEPanel extends PGEBase {
 <div class="foot">Kwoty są prognozą lokalną integracji (stawki z konfiguracji, RCE z PSE), nie fakturą PGE. Zakup energii w tabeli i kafelku – brutto (bez dystrybucji). v${VERSION}</div>
 </main>`;
     this._bindChart(m);
+    this.shadowRoot.querySelectorAll("[data-hist]").forEach(el => {
+      el.onclick = () => openHistory(this, el.dataset.hist);
+      el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openHistory(this, el.dataset.hist); } };
+    });
     this.shadowRoot.querySelectorAll(".nav").forEach(b => b.onclick = () => { this._offset = Math.min(0, this._offset + Number(b.dataset.d)); this._range = makeRange("month", monthStart(new Date(), this._offset)); this._chartRaw = null; this._sig = ""; this._refresh(); });
     // aside tiles are previews only – no navigation inside the panel
     this.shadowRoot.querySelectorAll(".aside .link").forEach(el => el.classList.remove("link"));

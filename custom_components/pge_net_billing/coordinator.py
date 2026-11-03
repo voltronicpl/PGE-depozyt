@@ -8,7 +8,7 @@ from homeassistant.helpers.event import async_track_state_change_event, async_tr
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from .const import DEFAULTS
-from .pse import fetch_day, WARSAW
+from .pse import fetch_day, remember, WARSAW
 from .settlement import zone, month_key, settle_months, money, add_months
 
 _LOGGER = logging.getLogger(__name__)
@@ -155,12 +155,17 @@ class PGELedger:
 
     async def sync_prices(self):
         async with self.lock:
-            today = dt_util.now().astimezone(WARSAW).date()
-            for days_back in (2, 1, 0):
+            local = dt_util.now().astimezone(WARSAW)
+            today = local.date()
+            # -1 = tomorrow: PSE publishes D+1 around 14:30, the hourly tick retries until it is there
+            offsets = (2, 1, 0, -1) if local.hour >= 14 else (2, 1, 0)
+            for days_back in offsets:
                 try:
                     self.data['prices'].update(await fetch_day(self.hass, today - timedelta(days=days_back)))
                 except Exception as exc:
-                    _LOGGER.warning('PSE RCE sync failed for %s: %s', today-timedelta(days=days_back), exc)
+                    if days_back >= 0:
+                        _LOGGER.warning('PSE RCE sync failed for %s: %s', today-timedelta(days=days_back), exc)
+            remember(self.data['prices'])
             self.data['price_last_sync'] = dt_util.utcnow().isoformat()
             self._reprice()
             used = {x['slot'] for x in self.data['intervals']}
@@ -227,15 +232,18 @@ class PGELedger:
         if kind == 'rce_current':
             local = dt_util.now().astimezone(WARSAW)
             start = local.replace(hour=0, minute=0, second=0, microsecond=0)
-            end = start + timedelta(days=1)
-            rows = []
+            mid = start + timedelta(days=1)
+            end = start + timedelta(days=2)
+            rows, tomorrow = [], []
             for slot, price in sorted(self.data['prices'].items()):
                 t = datetime.fromisoformat(slot).astimezone(WARSAW)
-                if start <= t < end:
+                if start <= t < mid:
                     rows.append([slot, round(price, 5)])
+                elif mid <= t < end:
+                    tomorrow.append([slot, round(price, 5)])
             now = dt_util.utcnow()
             current = now.replace(minute=now.minute//15*15, second=0, microsecond=0).isoformat()
-            return {'slot': current, 'today': rows}
+            return {'slot': current, 'today': rows, 'tomorrow': tomorrow}
         return {}
 
     async def async_shutdown(self):
