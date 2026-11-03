@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.5.4 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.5.5 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.5.4";
+const VERSION = "1.5.5";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -153,8 +153,10 @@ function buildModel(hass, ids, raw, offset) {
   };
 
   const rce = st("rce_current");
-  const rceToday = (rce?.attributes?.today || []).map(x => Number(x[1])).filter(isNum);
-  const rceTomorrow = (rce?.attributes?.tomorrow || []).map(x => Number(x[1])).filter(isNum);
+  // RCE shown gross: PSE net price × prosumer multiplier from the integration config (default 1.23)
+  const rceMul = isNum(rce?.attributes?.multiplier) ? Number(rce.attributes.multiplier) : 1.23;
+  const rceToday = (rce?.attributes?.today || []).map(x => Number(x[1]) * rceMul).filter(isNum);
+  const rceTomorrow = (rce?.attributes?.tomorrow || []).map(x => Number(x[1]) * rceMul).filter(isNum);
   const rceSlot = rce?.attributes?.slot ? new Date(rce.attributes.slot) : null;
   const updated = KEYS.map(k => st(k)?.last_updated).filter(Boolean).map(Date.parse).filter(isNum);
 
@@ -166,7 +168,7 @@ function buildModel(hass, ids, raw, offset) {
       imp: s30(imp), exp: s30(r => r.export_kwh), sell: s30(r => r.export_value), cost: s30(r => r.energy_cost),
       bal: s30(r => isNum(r.export_kwh) && isNum(imp(r)) ? r.export_kwh - imp(r) : null),
     },
-    rce: val("rce_current"), rceToday, rceTomorrow, rceSlot,
+    rce: isNum(val("rce_current")) ? val("rce_current") * rceMul : null, rceMul, rceToday, rceTomorrow, rceSlot,
     updated: updated.length ? new Date(Math.max(...updated)) : null,
     todayV: (() => { const r = days[dayKey(today0)]; return isCurrent && r ? { imp: imp(r), exp: isNum(r.export_kwh) ? Number(r.export_kwh) : null, cost: isNum(r.energy_cost) ? r.energy_cost * (1 + vat) : null, sell: isNum(r.export_value) ? Number(r.export_value) : null } : null; })(),
     found: Object.values(ids).some(Boolean),
@@ -599,7 +601,7 @@ const HIST = {
   bal: { title: "Bilans energii (oddano − pobrano)", tone: TONE.green, kind: "energy", fmt: v => kwh(v, true), signed: true, note: "Pomiary z licznika (Recorder HA): oddano minus pobrano. Przyszłości nie ma – to tylko to, co już przepłynęło." },
   invoice: { title: "Szacowana kwota rachunku – miesiące", tone: TONE.orange, kind: "months", fmt: v => zl(v), note: "Wyliczenie integracji ze zmierzonej energii: energia brutto − depozyt + dystrybucja + opłaty stałe. Bieżący miesiąc = stan na teraz (miesiąc niezakończony, bez dopowiadania reszty). To nie jest faktura PGE." },
   deposit: { title: "Depozyt prosumencki – miesiące", tone: TONE.green, kind: "months", fmt: v => zl(v), note: "Słupki = saldo dostępne w miesiącu (FIFO z policzonego eksportu). Jaśniejsze słupki w przyszłości = to, co już jest na koncie i dopiero wygaśnie – zakładając, że nic z tego nie zostanie zużyte. Nic nie jest dopowiadane." },
-  rce: { title: "Cena RCE", tone: TONE.blue, kind: "rce", fmt: pricePL, note: "Ceny z PSE (RCE-PLN). Linia ciągła = historia, przerywana = ceny już opublikowane na przyszłość (D+1 ok. 14:30)." },
+  rce: { title: "Cena RCE brutto", tone: TONE.blue, kind: "rce", fmt: pricePL, note: "Ceny z PSE (RCE-PLN) × współczynnik prosumencki z konfiguracji (domyślnie 1,23) – tyle realnie trafia do depozytu za kWh (ujemne ceny depozyt liczy jako 0). Linia ciągła = historia, przerywana = ceny już opublikowane na przyszłość (D+1 ok. 14:30)." },
   tariff: { title: "Taryfa G12 – cena za kWh brutto", tone: TONE.orange, kind: "tariff", fmt: pricePL, note: "Harmonogram stref G12 jest znany z góry. Cena = energia + dystrybucja zmienna, brutto, wg obecnych stawek z konfiguracji (wstecz pokazuje dzisiejsze stawki)." },
 };
 const H_MODES = { energy: MODES, rce: MODES, tariff: MODES.slice(0, 3), months: [] };
@@ -674,9 +676,9 @@ class PGEHistory extends HTMLElement {
       } else if (h.kind === "rce") {
         const days = (r.end - r.start) / 864e5, agg = "raw"; // always real 15-min prices, never averaged
         const res = await hass.callApi("GET", `pge_net_billing/rce?start=${isoDate(r.start)}&end=${isoDate(addDays(r.end, -1))}&agg=${agg}`);
-        const len = agg === "raw" ? 9e5 : agg === "hour" ? 36e5 : 864e5, now = Date.now();
+        const mul = p._model().rceMul || 1.23, len = agg === "raw" ? 9e5 : agg === "hour" ? 36e5 : 864e5, now = Date.now();
         const items = (res?.rows || []).map(x => { const t = new Date(x[0]); const t1 = agg === "day" ? +addDays(t, 1) : +t + len;
-          return { t0: +t, t1, v: x[1], lo: x[2], hi: x[3], tlo: x[4] ? new Date(x[4]) : t, thi: x[5] ? new Date(x[5]) : t, fut: +t > now, tip: agg === "raw" ? `${dayShort(t)}, ${pad(t.getHours())}:${pad(t.getMinutes())}–${pad(new Date(t1).getHours())}:${pad(new Date(t1).getMinutes())}` : agg === "hour" ? `${dayShort(t)}, ${pad(t.getHours())}:00–${pad((t.getHours() + 1) % 24)}:00` : `${dayShort(t)} ${t.getFullYear()}` }; });
+          return { t0: +t, t1, v: x[1] * mul, lo: isNum(x[2]) ? x[2] * mul : undefined, hi: isNum(x[3]) ? x[3] * mul : undefined, tlo: x[4] ? new Date(x[4]) : t, thi: x[5] ? new Date(x[5]) : t, fut: +t > now, tip: agg === "raw" ? `${dayShort(t)}, ${pad(t.getHours())}:${pad(t.getMinutes())}–${pad(new Date(t1).getHours())}:${pad(new Date(t1).getMinutes())}` : agg === "hour" ? `${dayShort(t)}, ${pad(t.getHours())}:00–${pad((t.getHours() + 1) % 24)}:00` : `${dayShort(t)} ${t.getFullYear()}` }; });
         items.forEach(it => { const t = new Date(it.t0); if (t.getMinutes() || (days > 1.1 && t.getHours())) return;
           if (days <= 1.1) { if (t.getHours() % 3 === 0) it.lab = pad(t.getHours()) + ":00"; }
           else if (days <= 8) it.lab = dayShort(t);
@@ -976,7 +978,7 @@ class PGEPanel extends PGEBase {
       <div class="b-foot"><div>${delta(m.month.cost, m.prev.cost, true)}${isNum(m.prev.cost) && m.prev.cost ? `<div class="b-note">w porównaniu z ${prevI}</div>` : ""}</div>${sw(m.spark.cost, TONE.red, 90, 44)}</div></div></div>
     <div class="box hist" data-hist="sell" tabindex="0" role="button" title="Kliknij: historia">${icon("trending-up", "green", "ic-plain")}<div class="b-body"><div class="muted2">Wartość oddanej energii</div><div class="b-val">${zl(m.month.sell)}</div>
       <div class="b-foot"><div>${delta(m.month.sell, m.prev.sell, false)}${isNum(m.prev.sell) && m.prev.sell ? `<div class="b-note">w porównaniu z ${prevI}</div>` : ""}</div>${sw(m.spark.sell, TONE.green, 90, 44)}</div></div></div>
-    <div class="box hist" data-hist="rce" tabindex="0" role="button" title="Kliknij: historia i ceny na jutro">${icon("chart-bar", "blue", "ic-plain")}<div class="b-body"><div class="muted2">Aktualna cena RCE</div><div class="b-val">${isNum(m.rce) ? NF4.format(m.rce) + " zł/kWh" : "—"}</div><div class="b-note">${esc(rceSlot)}</div>
+    <div class="box hist" data-hist="rce" tabindex="0" role="button" title="Kliknij: historia i ceny na jutro">${icon("chart-bar", "blue", "ic-plain")}<div class="b-body"><div class="muted2">Aktualna cena RCE brutto</div><div class="b-val">${isNum(m.rce) ? NF4.format(m.rce) + " zł/kWh" : "—"}</div><div class="b-note">${esc(rceSlot)}</div>
       <div class="b-foot" style="margin-top:auto">${spark(m.rceToday.concat(m.rceTomorrow), TONE.blue, 200, 40)}</div></div></div>
     <div class="box hist" data-hist="tariff" tabindex="0" role="button" title="Kliknij: strefy i ceny – historia i przyszłość">${icon("clock-outline", "blue", "ic-plain")}<div class="b-body"><div class="muted2">Taryfa dystrybucji</div><div class="b-val">${esc(tariff?.name || "G12")}</div>
       <div class="b-note">Obecnie: ${zoneKey === "s1" ? "strefa dzienna" : zoneKey === "s2" ? "strefa nocna" : "—"}</div>

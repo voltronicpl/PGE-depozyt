@@ -256,7 +256,7 @@ class PGELedger:
                     tomorrow.append([slot, round(price, 5)])
             now = dt_util.utcnow()
             current = now.replace(minute=now.minute//15*15, second=0, microsecond=0).isoformat()
-            return {'slot': current, 'today': rows, 'tomorrow': tomorrow}
+            return {'slot': current, 'today': rows, 'tomorrow': tomorrow, 'multiplier': float(self.settings['rce_multiplier'])}
         return {}
 
     async def async_shutdown(self):
