@@ -174,7 +174,7 @@ class PGELedger:
             await self.store.async_save(self.data)
             self._notify()
 
-    def _settlements(self):
+    def _settlements(self, credits_out=None):
         months = {k: dict(v) for k, v in self.data['months'].items()}
         start = date.fromisoformat(self.settings['start_date'])
         today = dt_util.now().astimezone(WARSAW).date()
@@ -185,7 +185,7 @@ class PGELedger:
             m['fixed'] = self._fixed_month(key)
             if cursor.month == 12: cursor = date(cursor.year+1, 1, 1)
             else: cursor = date(cursor.year, cursor.month+1, 1)
-        return settle_months(months, max(0., float(self.settings['initial_deposit']) + float(self.data.get('deposit_adjustment', 0))))
+        return settle_months(months, max(0., float(self.settings['initial_deposit']) + float(self.data.get('deposit_adjustment', 0))), credits_out=credits_out)
 
     def value(self, kind):
         d, s = self.data, self.settings
@@ -225,8 +225,10 @@ class PGELedger:
             z = zone(local)
             variable = sum(float(s[k]) for k in ('quality', 'cogen', 'oze'))
             price = {k: money((float(s[f'buy_{k}']) + float(s[f'distribution_{k}']) + variable) * (1 + vat)) for k in ('s1', 's2')}
+            credits = []
             return {
-                'months': self._settlements(),
+                'months': self._settlements(credits),
+                'deposit_credits': credits,
                 'tariff': {'name': 'G12', 'zone': z, 'price_gross': price, 'vat': vat},
             }
         if kind == 'rce_current':

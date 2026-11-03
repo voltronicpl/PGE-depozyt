@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.5.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.5.1 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.5.0";
+const VERSION = "1.5.1";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -269,7 +269,7 @@ const TILES = {
 };
 
 function depCard(tone, kicker, title, value, rows, cls, tip) {
-  return `<div class="dep-card ${cls}" title="${esc(tip)}"><div class="dep-top"><span class="ic ic-${tone}"><ha-icon icon="mdi:calendar-month"></ha-icon></span><div><div class="dep-kicker">${esc(kicker)}</div><div class="dep-title">${esc(title)}</div><div class="dep-val ${isNum(value) && value < 0 ? "t-red" : "t-green"}">${zl(value, true)}</div></div></div>
+  return `<div class="dep-card hist ${cls}" data-hist="deposit" tabindex="0" role="button" title="${esc(tip + " · Kliknij: historia depozytu")}"><div class="dep-top"><span class="ic ic-${tone}"><ha-icon icon="mdi:calendar-month"></ha-icon></span><div><div class="dep-kicker">${esc(kicker)}</div><div class="dep-title">${esc(title)}</div><div class="dep-val ${isNum(value) && value < 0 ? "t-red" : "t-green"}">${zl(value, true)}</div></div></div>
     ${rows.map(([l, v, c]) => `<div class="dep-line"><span>${esc(l)}</span><b class="${c}">${esc(v)}</b></div>`).join("")}</div>`;
 }
 
@@ -373,7 +373,7 @@ h3{margin:0;font-size:16px;font-weight:700}h3 span{font-weight:400;color:var(--m
 .bot{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-top:13px}.bot .box{padding:12px 14px 8px;min-height:110px;display:flex;gap:14px}.bot .ic{width:36px;height:36px;padding:5px}.bot .b-body{flex:1;min-width:0;display:flex;flex-direction:column}
 .b-val{font-size:clamp(19px,1.7vw,25px);font-weight:700;margin-top:6px;white-space:nowrap}.b-note{font-size:13px;color:var(--mut2)}.bot .delta{font-size:15px}.b-foot{display:flex;align-items:flex-end;gap:6px;margin-top:8px;flex:1;position:relative;min-height:48px}.b-foot>div:first-child{align-self:flex-start}.b-foot>div:first-child{flex:1;position:relative;z-index:1}.b-foot .b-note{white-space:nowrap;font-size:12px}.b-foot .spark-wrap{position:absolute;right:0;bottom:0;width:42%}
 .zone{display:flex;align-items:center;gap:10px;margin-top:auto}.zone .ic{width:34px;height:34px;padding:4px}
-.hist{cursor:pointer;transition:border-color .15s}.hist:hover,.hist:focus-visible{border-color:#3b8cff;outline:none}
+.hist{cursor:pointer;transition:border-color .15s,background .15s}.hist:hover,.hist:focus-visible{border-color:#3b8cff;outline:none}tr.hist:hover td,tr.hist:focus-visible td{background:rgba(59,140,255,.08)}
 .tables{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:13px}.tables .box{padding:16px 16px 6px}
 table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:12px}th{font-weight:400;color:var(--mut2);text-align:right;padding:6px 6px;background:#0f2536}td{text-align:right;padding:6px 6px;border-bottom:1px solid #132b3c;white-space:nowrap}tr:last-child td{border-bottom:0}th:first-child,td:first-child{text-align:left}
 .aside h2{font-size:19px;font-weight:500;margin:6px 0 16px}.aside .tile{margin-bottom:14px}
@@ -596,10 +596,13 @@ const HIST = {
   sell: { title: "Wartość sprzedaży (RCE)", tone: TONE.blue, kind: "energy", fmt: v => zl(v), note: "Oddana energia × RCE × współczynnik. Liczone dla minionych okresów." },
   cost: { title: "Koszt zakupu energii (brutto)", tone: TONE.red, kind: "energy", fmt: v => zl(v), note: "Energia czynna brutto, bez dystrybucji i opłat stałych. Liczone dla minionych okresów." },
   profit: { title: "Zysk / strata", tone: TONE.green, kind: "energy", fmt: v => zl(v, true), signed: true, note: "Wartość sprzedaży (RCE) − koszt zakupu energii brutto." },
+  bal: { title: "Bilans energii (oddano − pobrano)", tone: TONE.green, kind: "energy", fmt: v => kwh(v, true), signed: true, note: "Pomiary z licznika (Recorder HA): oddano minus pobrano. Przyszłości nie ma – to tylko to, co już przepłynęło." },
+  invoice: { title: "Szacowana kwota rachunku – miesiące", tone: TONE.orange, kind: "months", fmt: v => zl(v), note: "Wyliczenie integracji ze zmierzonej energii: energia brutto − depozyt + dystrybucja + opłaty stałe. Bieżący miesiąc = stan na teraz (miesiąc niezakończony, bez dopowiadania reszty). To nie jest faktura PGE." },
+  deposit: { title: "Depozyt prosumencki – miesiące", tone: TONE.green, kind: "months", fmt: v => zl(v), note: "Słupki = saldo dostępne w miesiącu (FIFO z policzonego eksportu). Jaśniejsze słupki w przyszłości = to, co już jest na koncie i dopiero wygaśnie – zakładając, że nic z tego nie zostanie zużyte. Nic nie jest dopowiadane." },
   rce: { title: "Cena RCE", tone: TONE.blue, kind: "rce", fmt: pricePL, note: "Ceny z PSE (RCE-PLN). Linia ciągła = historia, przerywana = ceny już opublikowane na przyszłość (D+1 ok. 14:30)." },
   tariff: { title: "Taryfa G12 – cena za kWh brutto", tone: TONE.orange, kind: "tariff", fmt: pricePL, note: "Harmonogram stref G12 jest znany z góry. Cena = energia + dystrybucja zmienna, brutto, wg obecnych stawek z konfiguracji (wstecz pokazuje dzisiejsze stawki)." },
 };
-const H_MODES = { energy: MODES, rce: MODES, tariff: MODES.slice(0, 3) };
+const H_MODES = { energy: MODES, rce: MODES, tariff: MODES.slice(0, 3), months: [] };
 
 function niceStep(span, n = 5) {
   const raw = Math.max(span, 1e-9) / n, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
@@ -622,7 +625,7 @@ function histSvg(items, r, o) {
     marks = items.map((it, i) => {
       if (!isNum(it.v)) return "";
       const x0 = X(it.t0), w = Math.max(1, (X(it.t1) - x0) * .64), y = Y(Math.max(0, it.v)), h = Math.abs(Y(it.v) - Y(0));
-      return `<rect class="mk" data-i="${i}" x="${x0 + (X(it.t1) - x0 - w) / 2}" y="${y}" width="${w}" height="${Math.max(h, .5)}" rx="${Math.min(3, w / 3)}" fill="${o.signed && it.v < 0 ? TONE.red : o.color}"/>`;
+      return `<rect class="mk" data-i="${i}" x="${x0 + (X(it.t1) - x0 - w) / 2}" y="${y}" width="${w}" height="${Math.max(h, .5)}" rx="${Math.min(3, w / 3)}" fill="${o.signed && it.v < 0 ? TONE.red : o.color}"${it.fut ? ' opacity=".4" stroke-dasharray="4 3" stroke="' + o.color + '"' : ""}/>`;
     }).join("");
   } else {
     const seg = fut => { let d = "", open = false;
@@ -641,9 +644,9 @@ function histSvg(items, r, o) {
 
 class PGEHistory extends HTMLElement {
   constructor() { super(); this.attachShadow({ mode: "open" }); this._key = e => { if (e.key === "Escape") this.close(); }; }
-  open(panel, key) {
+  open(panel, key, range) {
     this._p = panel; this._k = key; const h = HIST[key], now = new Date();
-    const pr = panel._range;
+    const pr = range || panel._range;
     this._r = h.kind === "energy" && pr ? pr : makeRange(h.kind === "rce" && now.getHours() >= 15 ? "week" : "day", now);
     if (h.kind === "tariff" && !H_MODES.tariff.some(x => x[0] === this._r.mode)) this._r = makeRange("day", now);
     document.addEventListener("keydown", this._key);
@@ -656,14 +659,17 @@ class PGEHistory extends HTMLElement {
     return h.kind === "energy" ? t : h.kind === "rce" ? addDays(d0, 1) : addDays(d0, 400);
   }
   async _load() {
-    const r = this._r, h = HIST[this._k], p = this._p, hass = p._hass;
+    const r = this._r, h = HIST[this._k], p = this._p, hass = p._hass, tok = this._tok = (this._tok || 0) + 1;
     this._d = null; this._draw();
     let d;
     try {
       if (h.kind === "energy") {
         const raw = r.start < new Date() ? await loadStats(hass, p._ids, r.start, new Date(Math.min(r.end, Date.now() + 36e5)), r.period) : {};
         const ch = buildChart(hass, p._ids, raw || {}, r, p._model());
-        d = { items: ch.buckets.map(b => ({ t0: +b.d, t1: +b.nx, v: b.v?.[this._k], fut: b.future, d: b.d, lab: b.l1, lab2: b.l2, tip: b.tip })), per: ch.per, tot: ch.tot[this._k], avg: ch.avg[this._k], avgLabel: ch.avgLabel, err: !raw };
+        const k = this._k, pick = v => !v ? null : k === "bal" ? (isNum(v.imp) && isNum(v.exp) ? v.exp - v.imp : null) : v[k];
+        const extra = v => !v ? "" : k === "bal" ? `Pobrano ${kwh(v.imp)} · oddano ${kwh(v.exp)}` : k === "profit" ? `Sprzedaż ${zl(v.sell)} · zakup ${zl(v.cost)}` : "";
+        const tot = pick(ch.tot), items = ch.buckets.map(b => ({ t0: +b.d, t1: +b.nx, v: pick(b.v), x: extra(b.v), fut: b.future, d: b.d, lab: b.l1, lab2: b.l2, tip: b.tip }));
+        d = { items, per: ch.per, tot, totX: extra(ch.tot), avg: k === "bal" ? (isNum(ch.avg.exp) && isNum(ch.avg.imp) ? ch.avg.exp - ch.avg.imp : null) : ch.avg[k], avgLabel: ch.avgLabel, err: !raw };
         if (ch.buckets.length > 40) { const ev = Math.ceil(ch.buckets.length / 24); d.items.forEach((it, i) => { if (i % ev) it.lab = it.lab2 = ""; }); }
       } else if (h.kind === "rce") {
         const days = (r.end - r.start) / 864e5, agg = days > 62 ? "day" : days > 8 ? "hour" : "raw";
@@ -676,6 +682,26 @@ class PGEHistory extends HTMLElement {
           else if (agg === "hour") { if (t.getHours() === 0 && t.getDate() % 2 === 1) it.lab = pad(t.getDate()); }
           else if (t.getDate() === 1) it.lab = MONTH_SHORT[t.getMonth()]; });
         d = { items, agg, until: res?.published_until ? new Date(+new Date(res.published_until) + 9e5) : null };
+      } else if (h.kind === "months") {
+        const m = p._model(), ms = m.months || {}, keys = Object.keys(ms).filter(x => /^\d{4}-\d{2}$/.test(x)).sort();
+        const st = p._hass?.states?.[p._ids?.invoice_forecast], credits = st?.attributes?.deposit_credits || [];
+        const cur = monthKey(new Date()), M = key => { const [y, mo] = key.split("-").map(Number); return new Date(y, mo - 1, 1); };
+        const items = keys.map(key => { const o = ms[key], a = M(key), live = key === cur;
+          const v = this._k === "invoice" ? o.invoice : isNum(o.deposit_available) ? o.deposit_available : o.deposit_balance;
+          const x = this._k === "invoice"
+            ? `Energia ${zl(o.energy_gross)} · depozyt −${zl(o.deposit_used)} · dystrybucja ${zl(o.distribution_gross)} · stałe ${zl(o.fixed_gross)}`
+            : `Naliczono ${zl(o.deposit_added)} · zużyto ${zl(o.deposit_used)} · wygasło ${zl(o.deposit_expired)} · od 1-szego nast. ${zl(o.deposit_next)}`;
+          return { t0: +a, t1: +monthStart(a, 1), v, x, o, key, fut: false, lab: MONTH_SHORT[a.getMonth()], lab2: String(a.getFullYear()).slice(2), tip: monthName(a) + (live ? " (stan na teraz)" : "") }; });
+        if (this._k === "deposit" && keys.length && credits.length) { // future: only tranches already on the account
+          let a = monthStart(M(keys.at(-1)), 1);
+          for (let i = 0; i < 14; i++, a = monthStart(a, 1)) {
+            const iso = isoDate(a), v = credits.filter(c => (!c.booked || c.booked <= iso) && (!c.expires || c.expires > iso)).reduce((s, c) => s + Number(c.amount || 0), 0);
+            if (v <= 0.004) break;
+            items.push({ t0: +a, t1: +monthStart(a, 1), v: Math.round(v * 100) / 100, fut: true, lab: MONTH_SHORT[a.getMonth()], lab2: String(a.getFullYear()).slice(2), tip: monthName(a) + " – już na koncie, jeśli nie zużyte", x: "" });
+          }
+        }
+        if (items.length) this._r = { mode: "custom", start: new Date(items[0].t0), end: new Date(items.at(-1).t1), period: "month" };
+        d = { items, credits, months: ms, cur };
       } else {
         const tr = p._model().tariff, pg = tr?.price_gross || {}, items = [], now = Date.now();
         for (let t = new Date(r.start); t < r.end; t = new Date(+t + 36e5)) {
@@ -687,7 +713,7 @@ class PGEHistory extends HTMLElement {
         d = { items, pg, name: tr?.name || "G12" };
       }
     } catch (e) { console.warn("PGE Net-Billing: history", e); d = { error: e?.body?.message || e?.message || String(e) }; }
-    if (r !== this._r) return;
+    if (tok !== this._tok) return;
     this._d = d; this._draw();
   }
   _summary(d, h) {
@@ -695,7 +721,17 @@ class PGEHistory extends HTMLElement {
     const nums = d.items.filter(i => isNum(i.v));
     const ext = f => nums.length ? nums.reduce((a, b) => f(b.v, a.v) ? b : a) : null;
     const mx = ext((a, b) => a > b), mn = ext((a, b) => a < b);
-    if (h.kind === "energy") return box("Suma w okresie", h.fmt(d.tot)) + box(d.avgLabel, h.fmt(d.avg)) + box("Najwięcej", mx ? h.fmt(mx.v) : "—", mx?.tip || "") + box("Najmniej", mn ? h.fmt(mn.v) : "—", mn?.tip || "");
+    if (h.kind === "energy") return box("Suma w okresie", h.fmt(d.tot), d.totX || "") + box(d.avgLabel, h.fmt(d.avg)) + box("Najwięcej", mx ? h.fmt(mx.v) : "—", mx?.tip || "") + box("Najmniej", mn ? h.fmt(mn.v) : "—", mn?.tip || "");
+    if (h.kind === "months") {
+      const past = d.items.filter(i => !i.fut && i.key !== d.cur), now = d.items.find(i => i.key === d.cur);
+      const sumK = f => d.items.filter(i => i.o).reduce((s, i) => s + (Number(i.o[f]) || 0), 0);
+      if (this._k === "invoice") {
+        const avg = past.length ? past.reduce((s, i) => s + Number(i.v || 0), 0) / past.length : null;
+        return box("Bieżący miesiąc", now ? zl(now.v) : "—", "stan na teraz") + box("Poprzedni", past.length ? zl(past.at(-1).v) : "—", past.length ? past.at(-1).tip : "") + box("Średnio (zamknięte)", zl(avg), `${past.length} mies.`) + box("Pokryte depozytem", zl(sumK("deposit_used")), "łącznie");
+      }
+      const exp = d.credits.filter(c => c.expires).sort((a, b) => a.expires < b.expires ? -1 : 1)[0];
+      return box("Dostępne teraz", now ? zl(now.v, true) : "—") + box("Naliczono łącznie", zl(sumK("deposit_added"))) + box("Wygasło łącznie", zl(sumK("deposit_expired"))) + box("Najbliższe wygaśnięcie", exp ? zl(exp.amount) : "—", exp ? "z dniem " + plDate(fromIso(exp.expires)) : "");
+    }
     if (h.kind === "rce") {
       const avg = nums.length ? nums.reduce((s, i) => s + Number(i.v), 0) / nums.length : null;
       const nowI = nums.find(i => i.t0 <= Date.now() && i.t1 > Date.now());
@@ -706,19 +742,20 @@ class PGEHistory extends HTMLElement {
   }
   _draw() {
     const h = HIST[this._k], r = this._r, d = this._d, lim = this._limit(), nx = shiftRange(r, 1);
-    const unit = h.kind === "energy" ? (this._k === "imp" || this._k === "exp" ? "kWh" : "zł") : "zł/kWh";
-    const axis = v => h.kind === "energy" ? String(+v.toFixed(2)).replace(".", ",") : v.toFixed(2).replace(".", ",");
+    const unit = h.kind === "energy" ? (["imp", "exp", "bal"].includes(this._k) ? "kWh" : "zł") : h.kind === "months" ? "zł" : "zł/kWh";
+    const axis = v => h.kind === "energy" || h.kind === "months" ? String(+v.toFixed(2)).replace(".", ",") : v.toFixed(2).replace(".", ",");
     let body;
     if (!d) body = `<div class="nohist">Ładowanie…</div>`;
     else if (d.error) body = `<div class="nohist">Nie udało się pobrać danych: ${esc(d.error)}</div>`;
     else if (!d.items.some(i => isNum(i.v))) body = `<div class="nohist">Brak danych w tym okresie${h.kind === "rce" && r.start > new Date() ? " – PSE jeszcze nie opublikowało cen" : ""}</div>`;
-    else body = histSvg(d.items, r, { type: h.kind === "energy" ? "bar" : "step", color: h.tone, signed: h.signed, unit, axis, until: h.kind === "rce" ? d.until : null });
+    else body = histSvg(d.items, r, { type: h.kind === "energy" || h.kind === "months" ? "bar" : "step", color: h.tone, signed: h.signed, unit, axis, until: h.kind === "rce" ? d.until : null });
     this.shadowRoot.innerHTML = `<style>${HCSS}</style><div class="bd" part="backdrop"><div class="mo" role="dialog" aria-modal="true" aria-label="${esc(h.title)}">
   <div class="mh"><h3>${esc(h.title)}</h3><span class="rl">${esc(rangeLabel(r))}</span><button class="x" aria-label="Zamknij"><ha-icon icon="mdi:close"></ha-icon></button></div>
-  <div class="ctl"><button class="b ar" data-s="-1" aria-label="Wcześniej"><ha-icon icon="mdi:chevron-left"></ha-icon></button><button class="b ar" data-s="1" ${nx.start > lim ? "disabled" : ""} aria-label="Później"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+  <div class="ctl"${h.kind === "months" ? " hidden" : ""}><button class="b ar" data-s="-1" aria-label="Wcześniej"><ha-icon icon="mdi:chevron-left"></ha-icon></button><button class="b ar" data-s="1" ${nx.start > lim ? "disabled" : ""} aria-label="Później"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
     ${H_MODES[h.kind].map(([k, l]) => `<button class="b${r.mode === k ? " on" : ""}" data-m="${k}">${l}</button>`).join("")}<button class="b" data-t="1">Dzisiaj</button>${h.kind === "rce" ? `<button class="b" data-tm="1">Jutro</button>` : ""}</div>
   <div class="pl">${body}<div class="tip" hidden></div></div>
   ${d && !d.error && d.items ? `<div class="sms">${this._summary(d, h)}</div>` : ""}
+  ${d && this._k === "deposit" && d.credits?.length ? `<table class="tr"><thead><tr><th>Z eksportu za</th><th>Na koncie od</th><th>Ważne do</th><th>Pozostało</th></tr></thead><tbody>${d.credits.map(c => `<tr><td>${c.origin === "opening" ? "saldo początkowe" : esc(monthName(fromIso(c.origin + "-01")))}</td><td>${c.booked ? plDate(fromIso(c.booked)) : "—"}</td><td>${c.expires ? plDate(addDays(fromIso(c.expires), -1)) : "bez terminu"}</td><td>${zl(c.amount)}</td></tr>`).join("")}</tbody></table>` : ""}
   <div class="nt">${esc(h.note)}${h.kind === "energy" && d?.per && d.per !== "hour" ? " Kliknij słupek, aby wejść w szczegóły." : ""}</div>
 </div></div>`;
     const S = this.shadowRoot, q = s => S.querySelector(s);
@@ -727,6 +764,7 @@ class PGEHistory extends HTMLElement {
     S.querySelectorAll("[data-s]").forEach(b => b.onclick = () => this._set(shiftRange(r, Number(b.dataset.s))));
     S.querySelectorAll("[data-m]").forEach(b => b.onclick = () => { const n = new Date(); this._set(makeRange(b.dataset.m, n >= r.start && n < r.end ? n : r.start)); });
     q("[data-t]").onclick = () => this._set(makeRange(r.mode === "custom" ? "day" : r.mode, new Date()));
+    if (h.kind === "months") { /* fixed range: all months */ }
     if (q("[data-tm]")) q("[data-tm]").onclick = () => this._set(makeRange("day", addDays(new Date(), 1)));
     const svg = q(".hs"), tip = q(".tip");
     if (!svg) return;
@@ -737,7 +775,7 @@ class PGEHistory extends HTMLElement {
         const x = Number(el.getAttribute("x")) + Number(el.getAttribute("width")) / 2;
         hl.style.display = ""; hl.setAttribute("x1", x); hl.setAttribute("x2", x);
         const range = isNum(it.lo) && it.hi !== it.lo ? `<div class="mut">min ${pricePL(it.lo)} · maks ${pricePL(it.hi)}</div>` : "";
-        tip.innerHTML = `<div class="tt">${esc(it.tip)}${it.fut ? " · przyszłość" : ""}</div><b>${isNum(it.v) ? h.fmt(it.v) : "brak danych"}</b>${range}`;
+        tip.innerHTML = `<div class="tt">${esc(it.tip)}${it.fut ? " · przyszłość" : ""}</div><b>${isNum(it.v) ? h.fmt(it.v) : "brak danych"}</b>${range}${it.x ? `<div class="mut">${esc(it.x)}</div>` : ""}`;
         tip.hidden = false; tip.style.left = `clamp(100px, ${x / 10}%, calc(100% - 100px))`;
       };
       if (h.kind === "energy" && !it.fut && (d.per === "day" || d.per === "month")) el.onclick = () => this._set(makeRange(d.per === "day" ? "day" : "month", it.d));
@@ -746,12 +784,12 @@ class PGEHistory extends HTMLElement {
   }
 }
 if (!customElements.get("pge-net-billing-history")) customElements.define("pge-net-billing-history", PGEHistory);
-function openHistory(panel, key) {
+function openHistory(panel, key, range) {
   if (!HIST[key]) return;
   document.querySelectorAll("pge-net-billing-history").forEach(e => e.close());
   const el = document.createElement("pge-net-billing-history");
   document.body.appendChild(el);
-  el.open(panel, key);
+  el.open(panel, key, range);
 }
 const HCSS = `
 :host{position:fixed;inset:0;z-index:9999;font-family:var(--paper-font-body1_-_font-family,Roboto),Roboto,"Segoe UI",Arial,sans-serif;color:#eaf2f9}
@@ -770,10 +808,17 @@ const HCSS = `
 .nohist{display:grid;place-items:center;min-height:220px;color:#9db2c3}
 .sms{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:8px}
 .sm{border:1px solid #17304a;border-radius:12px;background:#0a1a27;padding:10px 12px;min-width:0}.sm span{display:block;color:#c9d7e2;font-size:13px}.sm b{display:block;font-size:19px;margin-top:3px;white-space:nowrap}.sm small{display:block;color:#9db2c3;font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nt{color:#9db2c3;font-size:12.5px;margin-top:10px}
+.nt{color:#9db2c3;font-size:12.5px;margin-top:10px}[hidden]{display:none!important}
+.tr{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}.tr th{text-align:left;color:#9db2c3;font-weight:500;padding:6px 8px;background:#0a1a27}.tr td{padding:6px 8px;border-top:1px solid #17304a}.tr th:last-child,.tr td:last-child{text-align:right}
 @media(max-width:700px){.sms{grid-template-columns:1fr 1fr}.mo{padding:12px}}
 `;
 
+// table row -> range: current month view = today / week / month / year, older = month / previous month / year
+function periodRange(m, i) {
+  const now = new Date();
+  if (m.isCurrent) return makeRange(["day", "week", "month", "year"][i] || "month", now);
+  return [makeRange("month", m.sel), makeRange("month", m.prevD), makeRange("year", m.sel)][i] || makeRange("month", m.sel);
+}
 class PGEPanel extends PGEBase {
   set panel(p) { this._panelConfig = p?.config || {}; }
   set narrow(n) { this._narrow = n; }
@@ -867,8 +912,8 @@ class PGEPanel extends PGEBase {
     const tariff = m.tariff, zoneKey = tariff?.zone, zPrice = tariff?.price_gross?.[zoneKey];
     const rceSlot = m.rceSlot ? `${m.rceSlot.getDate()} ${MONTH_SHORT[m.rceSlot.getMonth()]} ${m.rceSlot.getFullYear()}, godz. ${pad(m.rceSlot.getHours())}:${pad(m.rceSlot.getMinutes())}` : "";
     const sw = (vals, col, w, h) => `<div class="spark-wrap">${spark(vals, col, w, h)}</div>`;
-    const row = (label, r) => `<tr><td>${esc(label)}</td><td>${kwh(r.imp)}</td><td>${kwh(r.exp)}</td><td class="${isNum(r.bal) && r.bal < 0 ? "t-red" : "t-green"}">${kwh(r.bal, true)}</td></tr>`;
-    const frow = (label, r) => `<tr><td>${esc(label)}</td><td>${zl(r.cost)}</td><td>${zl(r.sell)}</td><td class="${isNum(r.saldo) && r.saldo < 0 ? "t-red" : "t-green"}">${zl(r.saldo, true)}</td></tr>`;
+    const row = (label, r, i) => `<tr class="hist" data-hist="bal" data-pi="${i}" tabindex="0"><td>${esc(label)}</td><td>${kwh(r.imp)}</td><td>${kwh(r.exp)}</td><td class="${isNum(r.bal) && r.bal < 0 ? "t-red" : "t-green"}">${kwh(r.bal, true)}</td></tr>`;
+    const frow = (label, r, i) => `<tr class="hist" data-hist="profit" data-pi="${i}" tabindex="0"><td>${esc(label)}</td><td>${zl(r.cost)}</td><td>${zl(r.sell)}</td><td class="${isNum(r.saldo) && r.saldo < 0 ? "t-red" : "t-green"}">${zl(r.saldo, true)}</td></tr>`;
 
     this.shadowRoot.innerHTML = `<style>${CSS}</style><main class="pf">
 <div class="pf-grid"><div class="main">
@@ -879,15 +924,15 @@ class PGEPanel extends PGEBase {
   ${m.hasStats ? "" : `<div class="warn">Brak statystyk długoterminowych z Recordera – tabele, wykresy i porównania pojawią się po pierwszych godzinach/dobach zbierania danych.</div>`}
 
   <section class="top">
-    <div class="box"><div class="k-head"><span class="ic ic-orange">${CICON.bill}</span><div><div class="k-label">Szacowana kwota rachunku ${info("Prognoza lokalna (energia po depozycie + dystrybucja + opłaty stałe, brutto). To nie jest faktura PGE.")}</div>
+    <div class="box hist" data-hist="invoice" tabindex="0" role="button"><div class="k-head"><span class="ic ic-orange">${CICON.bill}</span><div><div class="k-label">Szacowana kwota rachunku ${info("Prognoza lokalna (energia po depozycie + dystrybucja + opłaty stałe, brutto). To nie jest faktura PGE.")}</div>
       <div class="k-val t-orange">${zl(m.invoice)}</div><div class="k-sub">za ${mAcc} ${m.sel.getFullYear()}</div></div></div>
       <div class="k-bottom"><div>${delta(m.invoice, m.invoicePrev, true)}${invDiff !== null ? `<div class="muted">w porównaniu z ${prevI}<br>(${zl(invDiff, true)})</div>` : ""}</div>${sw(m.spark.invoice, TONE.red, 120, 60)}</div></div>
 
-    <div class="box"><div class="k-head"><span class="ic ic-blue">${CICON.wallet}</span><div><div class="k-label">Saldo depozytu prosumenckiego ${info("Prognoza FIFO: wartość eksportu wg RCE × współczynnik, ważna 12 mies. To nie jest saldo bankowe.")}</div>
+    <div class="box hist" data-hist="deposit" tabindex="0" role="button"><div class="k-head"><span class="ic ic-blue">${CICON.wallet}</span><div><div class="k-label">Saldo depozytu prosumenckiego ${info("Prognoza FIFO: wartość eksportu wg RCE × współczynnik, ważna 12 mies. To nie jest saldo bankowe.")}</div>
       <div class="k-val t-green">${zl(m.deposit, true)}</div><div class="k-sub">Dostępne środki do rozliczenia</div></div></div>
       <div style="margin-top:auto">${bar(depositPct(m.deposit))}<div class="k-ends"><span>−${sc} zł<small>(do dopłaty)</small></span><span class="r">+${sc} zł<small>(nadwyżka)</small></span></div></div></div>
 
-    <div class="box"><div class="k-head"><span class="ic ic-green">${CICON.leaf}</span><div><div class="k-label">Bilans energii ${info("Oddano minus pobrano w okresie wybranym na wykresie „Przepływ energii” (najechanie na słupek pokazuje ten słupek).")}</div>
+    <div class="box hist" data-hist="bal" tabindex="0" role="button"><div class="k-head"><span class="ic ic-green">${CICON.leaf}</span><div><div class="k-label">Bilans energii ${info("Oddano minus pobrano w okresie wybranym na wykresie „Przepływ energii” (najechanie na słupek pokazuje ten słupek).")}</div>
       <div class="k-val ${bv.cls}" data-bb="val">${kwh(bv.b, true)}</div><div class="k-sub"><span data-bb="sub">${bv.sub}</span> · <span class="t-blue2" data-bb="per">${esc(rangeLabel(ch.r))}</span></div></div></div>
       <div style="margin-top:auto"><div class="bar bar-energy"><i data-bb="bar" style="left:${Math.max(2, Math.min(98, bv.pct)).toFixed(1)}%"></i></div><div class="k-ends"><span>Pobrano<small style="font-size:15px;font-weight:700;color:var(--o)" data-bb="imp">${kwh(bv.i)}</small></span><span class="r">Oddano<small style="font-size:15px;font-weight:700;color:var(--g)" data-bb="exp">${kwh(bv.e)}</small></span></div></div></div>
   </section>
@@ -918,8 +963,8 @@ class PGEPanel extends PGEBase {
   </section>
 
   <section class="tables">
-    <div class="box"><h3>Bilans energii</h3><table><thead><tr><th>Okres</th><th>Pobrano</th><th>Oddano</th><th>Bilans</th></tr></thead><tbody>${m.periods.map(([l, r]) => row(l, r)).join("")}</tbody></table></div>
-    <div class="box"><h3>Rozliczenia finansowe</h3><table><thead><tr><th>Okres</th><th>Zakup energii</th><th>Sprzedaż (RCE)</th><th>Saldo</th></tr></thead><tbody>${m.periods.map(([l, r]) => frow(l, r)).join("")}</tbody></table></div>
+    <div class="box"><h3>Bilans energii</h3><table><thead><tr><th>Okres</th><th>Pobrano</th><th>Oddano</th><th>Bilans</th></tr></thead><tbody>${m.periods.map(([l, r], i) => row(l, r, i)).join("")}</tbody></table></div>
+    <div class="box"><h3>Rozliczenia finansowe</h3><table><thead><tr><th>Okres</th><th>Zakup energii</th><th>Sprzedaż (RCE)</th><th>Saldo</th></tr></thead><tbody>${m.periods.map(([l, r], i) => frow(l, r, i)).join("")}</tbody></table></div>
   </section>
 </div>
 <aside class="aside"><h2>Mały kafelek do Twoich kart</h2>${TILES.deposit(m, c)}${TILES.invoice(m, c)}${TILES.balance(m, c)}${TILES.wallet(m, c)}${TILES.summary(m, c)}</aside>
@@ -928,8 +973,9 @@ class PGEPanel extends PGEBase {
 </main>`;
     this._bindChart(m);
     this.shadowRoot.querySelectorAll("[data-hist]").forEach(el => {
-      el.onclick = () => openHistory(this, el.dataset.hist);
-      el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openHistory(this, el.dataset.hist); } };
+      const go = () => openHistory(this, el.dataset.hist, el.dataset.pi !== undefined ? periodRange(m, Number(el.dataset.pi)) : undefined);
+      el.onclick = e => { if (e.target.closest(".info")) return; go(); };
+      el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } };
     });
     this.shadowRoot.querySelectorAll(".nav").forEach(b => b.onclick = () => { this._offset = Math.min(0, this._offset + Number(b.dataset.d)); this._range = makeRange("month", monthStart(new Date(), this._offset)); this._chartRaw = null; this._sig = ""; this._refresh(); });
     // aside tiles are previews only – no navigation inside the panel

@@ -23,7 +23,7 @@ def add_months(day, count):
     n = day.year * 12 + day.month - 1 + count
     return date(n // 12, n % 12 + 1, 1)
 
-def settle_months(months, initial_deposit=0, opening_month=None):
+def settle_months(months, initial_deposit=0, opening_month=None, credits_out=None):
     """Forecast FIFO monthly credits. No invented refund; expired funds recorded separately.
 
     Export of month M is booked on the prosumer account in M+1 and can pay
@@ -82,4 +82,9 @@ def settle_months(months, initial_deposit=0, opening_month=None):
             'distribution_gross': distribution, 'fixed_gross': fixed,
             'invoice': money(remaining + distribution + fixed),
         }
+    if credits_out is not None:  # remaining FIFO tranches after the last month (v1.5.1)
+        for c in credits:
+            origin = c['origin']
+            booked = add_months(date.fromisoformat(origin + '-01'), 1).isoformat() if origin != 'opening' and len(origin) == 7 else None
+            credits_out.append({'origin': origin, 'amount': money(c['amount']), 'booked': booked, 'expires': c['expires']})
     return output

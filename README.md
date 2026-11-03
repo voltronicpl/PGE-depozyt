@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.5.0
+# PGE Net-Billing v1.5.1
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -16,6 +16,13 @@ Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing 
 Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Nowe w v1.5.1 – więcej klikalnych elementów (tylko faktyczne dane)
+- **Szacowana kwota rachunku** → rachunek miesiąc po miesiącu z rozbiciem (energia, depozyt, dystrybucja, opłaty stałe). Bieżący miesiąc = stan na teraz, bez dopowiadania reszty miesiąca.
+- **Saldo depozytu** i **karty Poprzedni / Obecny / Następny miesiąc** → saldo depozytu w czasie + tabela transz: z którego miesiąca, od kiedy na koncie, do kiedy ważne, ile zostało. Przyszłe słupki = tylko środki już naliczone, które dopiero wygasną (zakładając brak zużycia).
+- **Bilans energii** → oddano − pobrano w czasie (Dzień / Tydzień / Miesiąc / Rok).
+- **Wiersze tabel** „Bilans energii” i „Rozliczenia finansowe” → modal od razu na tym okresie (dziś / tydzień / miesiąc / rok).
+- Atrybut `deposit_credits` w sensorze prognozy rachunku (pozostałe transze FIFO).
 
 ## Nowe w v1.5.0 – kliknij kafel = historia (i przyszłość, jeśli jest)
 - Kafle pod wykresem (Pobór, Oddanie, Wartość sprzedaży, Koszt zakupu, Zysk / strata) oraz dolne (Koszt zakupu, Wartość oddanej, Aktualna cena RCE, Taryfa dystrybucji) są klikalne – otwiera się okno (modal) z wykresem historii, przełącznikiem Dzień / Tydzień / Miesiąc / Rok, strzałkami ‹ › i „Dzisiaj”. Zamknięcie: ×, Esc lub klik obok.
