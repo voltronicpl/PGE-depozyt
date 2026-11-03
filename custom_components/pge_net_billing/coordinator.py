@@ -205,7 +205,9 @@ class PGELedger:
         if kind == 'rce_current':
             now = dt_util.utcnow()
             slot = now.replace(minute=now.minute//15*15, second=0, microsecond=0).isoformat()
-            return d['prices'].get(slot)
+            net = d['prices'].get(slot)
+            # v1.5.5: gross = PSE net price × prosumer multiplier (what the deposit gets per kWh)
+            return None if net is None else round(net * float(s['rce_multiplier']), 5)
         if kind == 'fixed_monthly':
             return money(self._fixed_month(dt_util.now().strftime('%Y-%m')) * (1+float(s['vat'])))
         if kind == 'variable_cost_gross':
@@ -247,16 +249,19 @@ class PGELedger:
             start = local.replace(hour=0, minute=0, second=0, microsecond=0)
             mid = start + timedelta(days=1)
             end = start + timedelta(days=2)
-            rows, tomorrow = [], []
+            rows, tomorrow, mul = [], [], float(self.settings['rce_multiplier'])
             for slot, price in sorted(self.data['prices'].items()):
                 t = datetime.fromisoformat(slot).astimezone(WARSAW)
+                g = round(price * mul, 5)  # gross, like the sensor state
                 if start <= t < mid:
-                    rows.append([slot, round(price, 5)])
+                    rows.append([slot, g])
                 elif mid <= t < end:
-                    tomorrow.append([slot, round(price, 5)])
+                    tomorrow.append([slot, g])
             now = dt_util.utcnow()
             current = now.replace(minute=now.minute//15*15, second=0, microsecond=0).isoformat()
-            return {'slot': current, 'today': rows, 'tomorrow': tomorrow, 'multiplier': float(self.settings['rce_multiplier'])}
+            net = self.data['prices'].get(current)
+            return {'slot': current, 'today': rows, 'tomorrow': tomorrow, 'multiplier': mul, 'gross': True,
+                    'net': None if net is None else round(net, 5)}
         return {}
 
     async def async_shutdown(self):

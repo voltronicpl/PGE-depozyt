@@ -20,7 +20,7 @@ SENSORS = [
  ('variable_cost_gross','Koszt zmienny brutto','PLN'),
  ('net_energy_estimate','Energia po depozycie (miesiąc)','PLN'),
  ('fixed_monthly','Opłaty stałe miesięcznie brutto','PLN'),
- ('rce_current','Aktualna RCE','PLN/kWh'),
+ ('rce_current','Aktualna RCE brutto','PLN/kWh'),
  ('pending_export_kwh','Eksport oczekujący na RCE','kWh'),
  ('data_gaps','Niekompletne pomiary',''),
  ('invoice_forecast','Prognoza rachunku za bieżący miesiąc','PLN'),

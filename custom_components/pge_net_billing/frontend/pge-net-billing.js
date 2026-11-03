@@ -1,14 +1,14 @@
-/* PGE Net-Billing v1.5.5 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.5.6 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.5.5";
+const VERSION = "1.5.6";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
 const NAMES = {
   invoice_forecast: "Prognoza rachunku za bieżący miesiąc", deposit_estimate: "Saldo depozytu (prognoza)",
   import_s1: "Pobór S1", import_s2: "Pobór S2", export_kwh: "Eksport", energy_cost: "Koszt energii netto",
-  export_value: "Wartość eksportu (szacunek)", rce_current: "Aktualna RCE",
+  export_value: "Wartość eksportu (szacunek)", rce_current: "Aktualna RCE brutto",
 };
 const STAT_KEYS = ["import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "invoice_forecast", "deposit_estimate"];
 
@@ -43,7 +43,7 @@ function resolveEntities(hass, config) {
   for (const k of KEYS) {
     let id = config?.entities?.[k];
     if (!id) id = reg.find(e => e.platform === DOMAIN && e.translation_key === k)?.entity_id;
-    if (!id) id = states.find(s => s.entity_id.startsWith("sensor.") && String(s.attributes?.friendly_name || "").endsWith(NAMES[k]))?.entity_id;
+    if (!id) id = states.find(s => s.entity_id.startsWith("sensor.") && [NAMES[k], k === "rce_current" ? "Aktualna RCE" : null].some(n => n && String(s.attributes?.friendly_name || "").endsWith(n)))?.entity_id;
     out[k] = id;
   }
   return out;
@@ -155,8 +155,9 @@ function buildModel(hass, ids, raw, offset) {
   const rce = st("rce_current");
   // RCE shown gross: PSE net price × prosumer multiplier from the integration config (default 1.23)
   const rceMul = isNum(rce?.attributes?.multiplier) ? Number(rce.attributes.multiplier) : 1.23;
-  const rceToday = (rce?.attributes?.today || []).map(x => Number(x[1]) * rceMul).filter(isNum);
-  const rceTomorrow = (rce?.attributes?.tomorrow || []).map(x => Number(x[1]) * rceMul).filter(isNum);
+  const stMul = rce?.attributes?.gross ? 1 : rceMul; // v1.5.5+ backend: sensor state and today/tomorrow are already gross
+  const rceToday = (rce?.attributes?.today || []).map(x => Number(x[1]) * stMul).filter(isNum);
+  const rceTomorrow = (rce?.attributes?.tomorrow || []).map(x => Number(x[1]) * stMul).filter(isNum);
   const rceSlot = rce?.attributes?.slot ? new Date(rce.attributes.slot) : null;
   const updated = KEYS.map(k => st(k)?.last_updated).filter(Boolean).map(Date.parse).filter(isNum);
 
@@ -168,7 +169,7 @@ function buildModel(hass, ids, raw, offset) {
       imp: s30(imp), exp: s30(r => r.export_kwh), sell: s30(r => r.export_value), cost: s30(r => r.energy_cost),
       bal: s30(r => isNum(r.export_kwh) && isNum(imp(r)) ? r.export_kwh - imp(r) : null),
     },
-    rce: isNum(val("rce_current")) ? val("rce_current") * rceMul : null, rceMul, rceToday, rceTomorrow, rceSlot,
+    rce: isNum(val("rce_current")) ? val("rce_current") * stMul : null, rceMul, rceToday, rceTomorrow, rceSlot,
     updated: updated.length ? new Date(Math.max(...updated)) : null,
     todayV: (() => { const r = days[dayKey(today0)]; return isCurrent && r ? { imp: imp(r), exp: isNum(r.export_kwh) ? Number(r.export_kwh) : null, cost: isNum(r.energy_cost) ? r.energy_cost * (1 + vat) : null, sell: isNum(r.export_value) ? Number(r.export_value) : null } : null; })(),
     found: Object.values(ids).some(Boolean),
