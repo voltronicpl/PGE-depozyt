@@ -1,4 +1,8 @@
-"""PSE RCE-PLN v2: prices PLN/MWh indexed by UTC interval start."""
+"""PSE RCE-PLN v2: prices PLN/MWh indexed by UTC interval start.
+
+PSE's dtime / dtime_utc is the END of the 15-min interval (dtime 00:15 <-> period 00:00 - 00:15),
+so the slot start is dtime_utc - 15 min. Before v1.5.4 the end was used as the start.
+"""
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import logging
@@ -7,6 +11,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 _LOGGER = logging.getLogger(__name__)
 WARSAW = ZoneInfo('Europe/Warsaw')
 URL = 'https://api.raporty.pse.pl/api/rce-pln'
+SLOT = timedelta(minutes=15)
 
 
 def parse_rows(payload):
@@ -21,7 +26,7 @@ def parse_rows(payload):
             dt = datetime.fromisoformat(stamp.replace('Z', '+00:00'))
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
-            dt = dt.astimezone(timezone.utc).replace(second=0, microsecond=0)
+            dt = dt.astimezone(timezone.utc).replace(second=0, microsecond=0) - SLOT
             val = float(str(row['rce_pln']).replace(',', '.')) / 1000
             result[dt.isoformat()] = val
         except (KeyError, TypeError, ValueError, OverflowError):

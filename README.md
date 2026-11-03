@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.5.3
+# PGE Net-Billing v1.5.4
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -16,6 +16,11 @@ Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing 
 Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Nowe w v1.5.4 – poprawka: ceny RCE przesunięte o 15 minut
+- PSE w `dtime` / `dtime_utc` podaje **koniec** kwadransu (`dtime` 00:15 ↔ `period` 00:00 - 00:15). Integracja traktowała to jako początek, więc każda cena była przypisana do kwadransu o 15 min za późno – także przy wycenie eksportu (depozyt), a ostatni kwadrans doby trafiał do następnego dnia.
+- Teraz początek kwadransu = `dtime_utc` − 15 min. Ceny już zapisane w integracji są jednorazowo przesuwane o −15 min przy starcie, a wycena eksportu przeliczana na nowo.
+- Ceny RCE w integracji są **netto** (`rce_pln` / 1000). Strony i aplikacje pokazujące ok. 23% więcej podają je brutto.
 
 ## Nowe w v1.5.3 – RCE bez uśredniania
 - Wykres RCE we wszystkich widokach (Dzień / Tydzień / Miesiąc / Rok) rysuje każdą prawdziwą cenę 15-minutową z PSE – nic nie jest uśredniane. Dymek pokazuje realną cenę kwadransu pod kursorem, „Najdrożej” / „Najtaniej” to prawdziwe ceny z dokładnym kwadransem.

@@ -31,6 +31,17 @@ class PGELedger:
         stored = await self.store.async_load()
         if stored:
             self.data.update(stored)
+        if not self.data.get('price_slot_start'):
+            # v1.5.4: prices were keyed by the END of the 15-min interval (PSE dtime) instead of its start.
+            # Shift every stored price back 15 min so it matches the interval it really belongs to.
+            shifted = {}
+            for k, v in self.data.get('prices', {}).items():
+                try:
+                    shifted[(datetime.fromisoformat(k) - timedelta(minutes=15)).isoformat()] = v
+                except (TypeError, ValueError):
+                    continue
+            self.data['prices'] = shifted
+            self.data['price_slot_start'] = True
         entities = [self.settings.get('import_entity'), self.settings.get('export_entity')]
         entities = [e for e in entities if e]
         if entities:
