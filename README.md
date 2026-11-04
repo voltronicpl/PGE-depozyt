@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.7.4
+# PGE Net-Billing v1.7.5
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -16,6 +16,9 @@ Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing 
 Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Nowe w v1.7.5
+- Kafle „Kupno – tania / droga taryfa” przeniesione do sekcji Pieniądze, zaraz przy średniej cenie kupna.
 
 ## Nowe w v1.7.4
 - Kafle „Kupno – tania taryfa (nocna)” i „Kupno – droga taryfa (dzienna)”: ile kWh kupiono w strefie S2 / S1 G12 w wybranym okresie, za ile i jaki to % importu (z liczników falownika, co kwadrans). Też w dymku widoku Miesiąc / Rok.

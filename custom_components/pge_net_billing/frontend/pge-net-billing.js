@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.7.4 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.7.5 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.7.4";
+const VERSION = "1.7.5";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -855,14 +855,14 @@ function pwCard(st, cfg, m, M, hass) {
     tile("dis", "pw_bat", PW.bat.color, "Rozładowanie baterii", cfg.bat || cfg.disE ? kwh(T.dis) : "—", cfg.bat || cfg.disE ? (cfg.bat ? `maks. moc ${kw(T.disMax)}` : "") + (T.src?.dis ? (cfg.bat ? " · " : "") + "licznik" : "") : miss, "#b7aaff"),
     tile("soc", "pw_soc", TONE.blue, "SOC magazynu min / maks", cfg.soc ? `${pct(T.sMin)} <span class="pw-arr">→</span> ${pct(T.sMax)}` : "—", cfg.soc ? `${isNum(T.tMin) ? "min " + at(T.tMin) + " · maks " + at(T.tMax) : ""}${live && isNum(nowSoc) ? " · teraz " + pct(nowSoc) : ""}` : miss),
     tile("imp", cfg.grid ? "pw_grid" : "cost", PW.grid.color, "Import z sieci", cfg.imp ? kwh(T.imp) : "—", cfg.imp ? "licznik falownika" : miss),
-    tile("cheap", "tariff", TONE.blue, "Kupno – tania taryfa (nocna)", cfg.imp ? kwh(T.impS2 || 0) : "—", cfg.imp ? `${zl(T.costS2 || 0)} · ${isNum(T.imp) && T.imp > 0 ? Math.round((T.impS2 || 0) / T.imp * 100) : 0}% importu` : miss, "#7fb3ff"),
-    tile("dear", "tariff", PINK, "Kupno – droga taryfa (dzienna)", cfg.imp ? kwh(T.impS1 || 0) : "—", cfg.imp ? `${zl(T.costS1 || 0)} · ${isNum(T.imp) && T.imp > 0 ? Math.round((T.impS1 || 0) / T.imp * 100) : 0}% importu` : miss),
     tile("exp", cfg.grid ? "pw_grid" : "sell", PW.grid.color, "Eksport do sieci", cfg.exp ? kwh(T.exp) : "—", cfg.exp ? "licznik falownika" : miss, "#ffd27a"),
     tile("load", "pw_load", PW.load.color, "Pobór domu", cfg.load || cfg.loadE ? kwh(T.load) : "—", cfg.load || cfg.loadE ? `${T.src?.load ? "licznik · " : ""}szczyt ${kw(T.ldMax)}${live && isDay ? " · teraz " + kw(liveVal("load")) : ""}` : miss),
   ].join("");
   const b = T.best;
   const e2 = [
     tile("buy", "tariff", PINK, "Śr. cena kupna", cfg.imp ? price(T.buy) : "—", cfg.imp ? `z ${kwh(T.imp)} importu` : miss),
+    tile("cheap", "tariff", TONE.blue, "Kupno – tania taryfa (nocna)", cfg.imp ? kwh(T.impS2 || 0) : "—", cfg.imp ? `${zl(T.costS2 || 0)} · ${isNum(T.imp) && T.imp > 0 ? Math.round((T.impS2 || 0) / T.imp * 100) : 0}% importu` : miss, "#7fb3ff"),
+    tile("dear", "tariff", PINK, "Kupno – droga taryfa (dzienna)", cfg.imp ? kwh(T.impS1 || 0) : "—", cfg.imp ? `${zl(T.costS1 || 0)} · ${isNum(T.imp) && T.imp > 0 ? Math.round((T.impS1 || 0) / T.imp * 100) : 0}% importu` : miss),
     tile("sell", "rce", CYAN, "Śr. cena sprzedaży", cfg.exp ? price(T.sell) : "—", cfg.exp ? `z ${kwh(T.exp)} eksportu` : miss),
     tile("best", "rce", CYAN, "Najwyższa cena sprzedaży", cfg.exp ? (b ? price(b.sell) : "—") : "—", cfg.exp ? (b ? `${isDay ? "" : dayShort(new Date(b.t)) + " "}${pad(new Date(b.t).getHours())}:${pad(new Date(b.t).getMinutes())}–${pad(new Date(b.t + 9e5).getHours())}:${pad(new Date(b.t + 9e5).getMinutes())} · sprzedano ${kwh(b.kwh)}` : "brak sprzedaży w okresie") : miss),
     tile("cost", "cost", TONE.red, "Zapłacono za zakup", cfg.imp ? zl(T.cost) : "—", cfg.imp ? "energia brutto (G12)" : miss),
