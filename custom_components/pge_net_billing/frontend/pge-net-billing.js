@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.5.6 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.6.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.5.6";
+const VERSION = "1.6.0";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -590,6 +590,134 @@ function chartCard(ch) {
 </section>`;
 }
 
+/* ---------- "Moc i bateria" chart (v1.6.0): raw HA history of the configured power sensors ---------- */
+const PW = {
+  soc: { label: "SOC", color: TONE.blue, unit: "%", attr: "battery_soc" },
+  pv: { label: "Produkcja", color: TONE.green, unit: "kW", attr: "pv_power" },
+  bat: { label: "Bateria", color: "#8b7cff", unit: "kW", attr: "battery_power", inv: "battery_invert" },
+  grid: { label: "Sieć", color: TONE.orange, unit: "kW", attr: "grid_power", inv: "grid_invert" },
+  load: { label: "Konsumpcja", color: TONE.red, unit: "kW", attr: "load_power" },
+};
+const PW_ORDER = ["soc", "bat", "grid", "pv", "load"];
+const pwCache = new Map();
+function pwConfig(hass, ids) {
+  const p = hass?.states?.[ids?.invoice_forecast]?.attributes?.power || {};
+  const out = {};
+  for (const k in PW) { const id = p[PW[k].attr]; if (id && hass?.states?.[id]) out[k] = { id, sign: PW[k].inv && p[PW[k].inv] ? -1 : 1 }; }
+  return out;
+}
+// raw recorded states, no averaging: [[ms, value], ...] in kW (W converted) or %
+async function pwLoad(hass, cfg, start, end) {
+  const keys = Object.keys(cfg);
+  if (!keys.length || !hass?.callWS) return {};
+  const live = end > Date.now();
+  const ck = keys.map(k => cfg[k].id + cfg[k].sign).join(",") + "|" + +start + "|" + +end;
+  const hit = pwCache.get(ck);
+  if (hit && (!live || Date.now() - hit.t < 60000)) return hit.p;
+  const p = hass.callWS({
+    type: "history/history_during_period", start_time: new Date(start).toISOString(), end_time: new Date(Math.min(+end, Date.now())).toISOString(),
+    entity_ids: keys.map(k => cfg[k].id), minimal_response: true, no_attributes: true, significant_changes_only: false,
+  }).then(res => {
+    const out = {};
+    for (const k of keys) {
+      const { id, sign } = cfg[k], unit = String(hass.states[id]?.attributes?.unit_of_measurement || "").trim();
+      const f = k === "soc" ? 1 : unit === "W" ? 0.001 : unit === "MW" ? 1000 : 1;
+      out[k] = (res?.[id] || []).map(x => [isNum(x.lu) ? Math.round(Number(x.lu) * 1000) : Date.parse(x.lu ?? x.last_updated ?? x.last_changed), Number(x.s ?? x.state) * f * (k === "soc" ? 1 : sign)])
+        .filter(x => isNum(x[0]) && isNum(x[1])).sort((a, b) => a[0] - b[0]);
+    }
+    return out;
+  }).catch(e => { console.warn("PGE Net-Billing: power history unavailable", e); pwCache.delete(ck); return { error: e?.message || String(e) }; });
+  pwCache.set(ck, { t: Date.now(), p });
+  return p;
+}
+const pwAt = (s, t) => { if (!s?.length || t < s[0][0]) return null; let lo = 0, hi = s.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (s[m][0] <= t) lo = m; else hi = m - 1; } return s[lo][1]; };
+// energy from real readings: each state holds until the next one (kWh = kW × h); + and − parts separately
+function pwEnergy(s, a, b) {
+  let pos = 0, neg = 0;
+  if (!s?.length) return { pos: null, neg: null };
+  for (let i = 0; i < s.length; i++) {
+    const t0 = Math.max(a, s[i][0]), t1 = Math.min(b, i + 1 < s.length ? s[i + 1][0] : b);
+    if (t1 <= t0) continue;
+    const e = s[i][1] * (t1 - t0) / 36e5;
+    if (e > 0) pos += e; else neg -= e;
+  }
+  return { pos, neg };
+}
+function pwStats(data, a, b) {
+  const now = Math.min(b, Date.now()), out = {};
+  for (const k in data) {
+    const s = data[k]; if (!Array.isArray(s) || !s.length) continue;
+    const vis = s.filter(x => x[0] >= a && x[0] < now), vals = vis.map(x => x[1]);
+    const before = pwAt(s, a); if (isNum(before)) vals.push(before);
+    out[k] = { ...pwEnergy(s, a, now), max: vals.length ? Math.max(...vals) : null, min: vals.length ? Math.min(...vals) : null, now: pwAt(s, now), n: vis.length };
+  }
+  return out;
+}
+function pwSvg(data, a, b, off) {
+  const W = 1000, H = 380, L = 50, R = 44, T = 16, B = 34, now = Date.now();
+  const X = t => L + (t - a) / (b - a) * (W - L - R);
+  const kw = []; for (const k of ["pv", "bat", "grid", "load"]) if (!off[k]) for (const x of data[k] || []) if (x[0] >= a && x[0] < b) kw.push(x[1]);
+  let lo = Math.min(0, ...kw), hi = Math.max(1, ...kw);
+  const st = niceStep(hi - lo, 6); lo = Math.floor(lo / st) * st; hi = Math.ceil(hi / st) * st;
+  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B), YS = p => T + (100 - p) / 100 * (H - T - B);
+  let g = "";
+  for (let t = a; t < b; t += 36e5) if (g12Zone(new Date(t)) === "s2") g += `<rect x="${X(t)}" y="${T}" width="${X(t + 36e5) - X(t)}" height="${H - T - B}" class="pw-night"/>`;
+  for (let v = lo; v <= hi + st / 1e6; v += st) g += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="${Math.abs(v) < st / 1e6 ? "zero" : "grid"}"/><text x="${L - 7}" y="${Y(v) + 4}" text-anchor="end" class="ax">${String(+v.toFixed(2)).replace(".", ",")}</text>`;
+  if (data.soc?.length && !off.soc) for (let p = 0; p <= 100; p += 20) g += `<text x="${W - R + 6}" y="${YS(p) + 4}" class="ax">${p}%</text>`;
+  for (let h = 0; h <= 24; h += 2) { const t = +new Date(new Date(a).setHours(h, 0, 0, 0)); if (t >= a && t <= b) g += `<text x="${X(t)}" y="${H - 12}" text-anchor="middle" class="xl">${pad(h % 24)}:00</text>`; }
+  const end = Math.min(b, now);
+  const path = (s, y) => { let d = "", prev = null; for (const [t, v] of s) { if (t >= end) break; const x = X(Math.max(a, t)); d += prev === null ? `M${x} ${y(v)}` : `H${x}V${y(v)}`; prev = v; } return d && prev !== null ? d + `H${X(end)}` : ""; };
+  const clip = s => { const v0 = pwAt(s, a); return (isNum(v0) ? [[a, v0]] : []).concat(s.filter(x => x[0] > a)); };
+  for (const k of PW_ORDER) {
+    const s = data[k]; if (!s?.length || off[k]) continue;
+    const c = clip(s), y = k === "soc" ? YS : Y, d = path(c, y); if (!d) continue;
+    const x0 = X(Math.max(a, c[0][0])), base = k === "soc" ? YS(0) : Y(0);
+    if (k === "soc" || k === "bat" || k === "grid") g += `<path d="${d}V${base}H${x0}Z" fill="${PW[k].color}" opacity="${k === "soc" ? .12 : .16}"/>`;
+    g += `<path d="${d}" fill="none" stroke="${PW[k].color}" stroke-width="${k === "soc" ? 2 : 1.7}" stroke-linejoin="round"/>`;
+  }
+  if (now > a && now < b) g += `<line x1="${X(now)}" x2="${X(now)}" y1="${T}" y2="${H - B}" class="nowl"/><text x="${X(now) + 5}" y="${T + 12}" class="nowt">teraz</text>`;
+  return `<svg class="pw-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"><text x="4" y="12" class="unit">kW</text>${g}<line class="pw-hl" y1="${T}" y2="${H - B}" style="display:none"/><rect class="pw-ov" x="${L}" y="${T}" width="${X(end) - L}" height="${H - T - B}" fill="transparent" data-a="${a}" data-b="${b}" data-l="${L}" data-r="${R}" data-w="${W}"/></svg>`;
+}
+function pwCard(st, cfg, m) {
+  const keys = Object.keys(cfg);
+  if (!keys.length) return `<section class="box pw"><div class="pw-head"><h3>Moc i bateria</h3></div><div class="nohist">Wskaż encje mocy (PV, bateria, SOC, konsumpcja, sieć) w Ustawienia → Urządzenia i usługi → PGE Net-Billing → Konfiguruj. Brakujące encje są po prostu pomijane.</div></section>`;
+  const a = +st.day, b = +addDays(st.day, 1), d = st.data, today = isoDate(st.day) === isoDate(new Date());
+  const S = d && !d.error ? pwStats(d, a, b) : {}, tz = m.tariff?.price_gross || {}, zNow = g12Zone(new Date());
+  const tile = (k, val, sub, cls = "") => cfg[k] ? `<div class="pw-tile hist" data-hist="pw_${k}" tabindex="0" role="button" title="Kliknij: historia"><small><i style="background:${PW[k].color}"></i>${val[0]}</small><b style="color:${PW[k].color}">${val[1]}</b><em>${sub}</em></div>` : "";
+  const kw = v => isNum(v) ? NF.format(v) + " kW" : "—", pct = v => isNum(v) ? Math.round(v) + "%" : "—";
+  const tiles = [
+    tile("pv", ["Produkcja PV", kwh(S.pv?.pos)], `szczyt ${kw(S.pv?.max)}`),
+    tile("bat", ["Ładowanie baterii", kwh(S.bat?.pos)], `rozład. ${kwh(S.bat?.neg)}`),
+    tile("grid", ["Pobór z sieci", kwh(S.grid?.pos)], `oddano ${kwh(S.grid?.neg)}`),
+    tile("load", ["Konsumpcja domu", kwh(S.load?.pos)], today ? `teraz ${kw(S.load?.now)}` : `szczyt ${kw(S.load?.max)}`),
+    tile("soc", ["SOC baterii", today ? pct(S.soc?.now) : pct(S.soc?.max)], `min ${pct(S.soc?.min)} · maks ${pct(S.soc?.max)}`),
+  ].join("");
+  const body = !d ? `<div class="nohist big">Ładowanie…</div>` : d.error ? `<div class="nohist big">Nie udało się pobrać historii: ${esc(d.error)}</div>` : Object.values(d).some(s => s?.length) ? pwSvg(d, a, b, st.off) : `<div class="nohist big">Brak zapisanych odczytów w tym dniu</div>`;
+  return `<section class="box pw">
+  <div class="pw-head"><h3>Moc i bateria <span>(${today ? "dziś" : esc(plDate(st.day))})</span></h3>${today && cfg.soc ? `<div class="muted">teraz · SOC <b class="t-blue">${pct(S.soc?.now)}</b></div>` : ""}</div>
+  <div class="fc-ctrl"><button class="fc-btn fc-arrow" data-pw="-1" aria-label="Poprzedni dzień"><ha-icon icon="mdi:chevron-left"></ha-icon></button><span class="fc-btn pw-day">${plDate(st.day)}</span><button class="fc-btn fc-arrow" data-pw="1" ${today ? "disabled" : ""} aria-label="Następny dzień"><ha-icon icon="mdi:chevron-right"></ha-icon></button><span class="fc-sep"></span><button class="fc-btn" data-pwd="-1">Wczoraj</button><button class="fc-btn${today ? " on fc-mode" : ""}" data-pwd="0">Dzisiaj</button></div>
+  <div class="pw-legend">${PW_ORDER.filter(k => cfg[k]).map(k => `<button class="pw-lg${st.off[k] ? " off" : ""}" data-lg="${k}"><i style="background:${PW[k].color}"></i>${PW[k].label}</button>`).join("")}</div>
+  <div class="pw-plot">${body}<div class="fc-tip pw-tip" hidden></div></div>
+  <div class="pw-prices">Cena zakupu (G12): <b data-pp="buy">${isNum(tz[zNow]) ? NF4.format(tz[zNow]) + " zł/kWh" : "—"}</b> · Cena RCE brutto: <b data-pp="rce">${isNum(m.rce) ? NF4.format(m.rce) + " zł/kWh" : "—"}</b> · <span data-pp="zone">${zNow === "s2" ? "strefa nocna" : "strefa dzienna"}</span><span data-pp="at"></span></div>
+  <div class="pw-tiles">${tiles}</div>
+  <div class="pw-note">Surowe odczyty z historii Home Assistant (bez uśredniania). Energia w kaflach = moc × czas między kolejnymi odczytami. Dodatnie = ładowanie baterii / pobór z sieci, ujemne = rozładowanie / oddanie.</div>
+</section>`;
+}
+const PW_CSS = `
+.pw{margin-top:13px;padding:16px 16px 12px}.pw-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.pw-head h3{margin:0;font-size:18px}.pw-head h3 span{color:var(--mut);font-weight:400}
+.pw .fc-ctrl{margin:12px 0 4px}.pw-day{cursor:default}
+.pw-legend{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px}.pw-lg{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:13px;color:var(--mut2);padding:4px 10px;border:1px solid #1d3a55;border-radius:20px;background:transparent;cursor:pointer}.pw-lg.off{opacity:.35}.pw-lg i{width:9px;height:9px;border-radius:50%}
+.pw-plot{position:relative;min-height:240px}.pw-svg{width:100%;height:auto;display:block}.pw-svg .grid{stroke:#1a3246}.pw-svg .zero{stroke:#3b5a73;stroke-width:1.2}.pw-svg .ax,.pw-svg .xl,.pw-svg .unit{fill:var(--mut);font-size:13px}
+.pw-night{fill:#3b8cff;opacity:.05}.pw-svg .nowl{stroke:#c9d7e2;stroke-dasharray:3 3;opacity:.6}.pw-svg .nowt{fill:#c9d7e2;font-size:12px}.pw-hl{stroke:#c9d7e2;opacity:.5}.pw-ov{cursor:crosshair}
+.pw-tip .r{display:flex;justify-content:space-between;gap:16px}.pw-tip i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.pw-prices{font-size:13px;color:var(--mut);margin-top:6px}.pw-prices b{color:var(--txt);font-weight:600}
+.pw-tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}
+.pw-tile{border:1px solid #17304a;border-radius:10px;background:linear-gradient(150deg,#0d2131,#0a1a27);padding:7px 10px;min-width:0}
+.pw-tile small{display:flex;align-items:center;gap:6px;color:var(--mut2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pw-tile small i{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.pw-tile b{display:block;font-size:16px;font-weight:700;margin-top:1px;white-space:nowrap}.pw-tile em{display:block;font-style:normal;color:var(--mut);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pw-note{font-size:11.5px;color:var(--mut);margin-top:8px}
+@media(max-width:820px){.pw-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+`;
 /* ---------- history modal: click a tile -> history + already published future (v1.5.0) ---------- */
 const g12Zone = d => { const mo = d.getMonth() + 1, h = d.getHours(), summer = mo >= 4 && mo <= 9; return h >= 22 || h < 6 || (summer ? h >= 15 && h < 17 : h >= 13 && h < 15) ? "s2" : "s1"; };
 const pricePL = v => isNum(v) ? NF4.format(v) + " zł/kWh" : "—";
@@ -602,10 +730,15 @@ const HIST = {
   bal: { title: "Bilans energii (oddano − pobrano)", tone: TONE.green, kind: "energy", fmt: v => kwh(v, true), signed: true, note: "Pomiary z licznika (Recorder HA): oddano minus pobrano. Przyszłości nie ma – to tylko to, co już przepłynęło." },
   invoice: { title: "Szacowana kwota rachunku – miesiące", tone: TONE.orange, kind: "months", fmt: v => zl(v), note: "Wyliczenie integracji ze zmierzonej energii: energia brutto − depozyt + dystrybucja + opłaty stałe. Bieżący miesiąc = stan na teraz (miesiąc niezakończony, bez dopowiadania reszty). To nie jest faktura PGE." },
   deposit: { title: "Depozyt prosumencki – miesiące", tone: TONE.green, kind: "months", fmt: v => zl(v), note: "Słupki = saldo dostępne w miesiącu (FIFO z policzonego eksportu). Jaśniejsze słupki w przyszłości = to, co już jest na koncie i dopiero wygaśnie – zakładając, że nic z tego nie zostanie zużyte. Nic nie jest dopowiadane." },
+  pw_pv: { title: "Moc produkcji PV", tone: TONE.green, kind: "power", pk: "pv", fmt: v => isNum(v) ? NF.format(v) + " kW" : "—", note: "Surowe odczyty z historii Home Assistant, bez uśredniania. Przyszłości nie ma – to pomiary." },
+  pw_bat: { title: "Moc baterii", tone: "#8b7cff", kind: "power", pk: "bat", fmt: v => isNum(v) ? NF.format(v) + " kW" : "—", signed: true, note: "Surowe odczyty z historii HA. + = ładowanie, − = rozładowanie (znak ustawiasz w opcjach integracji)." },
+  pw_grid: { title: "Moc sieci", tone: TONE.orange, kind: "power", pk: "grid", fmt: v => isNum(v) ? NF.format(v) + " kW" : "—", signed: true, note: "Surowe odczyty z historii HA. + = pobór z sieci, − = oddanie (znak ustawiasz w opcjach integracji)." },
+  pw_load: { title: "Moc konsumpcji domu", tone: TONE.red, kind: "power", pk: "load", fmt: v => isNum(v) ? NF.format(v) + " kW" : "—", note: "Surowe odczyty z historii Home Assistant, bez uśredniania." },
+  pw_soc: { title: "SOC baterii", tone: TONE.blue, kind: "power", pk: "soc", fmt: v => isNum(v) ? Math.round(v) + "%" : "—", note: "Surowe odczyty stanu naładowania z historii Home Assistant." },
   rce: { title: "Cena RCE brutto", tone: TONE.blue, kind: "rce", fmt: pricePL, note: "Ceny z PSE (RCE-PLN) × współczynnik prosumencki z konfiguracji (domyślnie 1,23) – tyle realnie trafia do depozytu za kWh (ujemne ceny depozyt liczy jako 0). Linia ciągła = historia, przerywana = ceny już opublikowane na przyszłość (D+1 ok. 14:30)." },
   tariff: { title: "Taryfa G12 – cena za kWh brutto", tone: TONE.orange, kind: "tariff", fmt: pricePL, note: "Harmonogram stref G12 jest znany z góry. Cena = energia + dystrybucja zmienna, brutto, wg obecnych stawek z konfiguracji (wstecz pokazuje dzisiejsze stawki)." },
 };
-const H_MODES = { energy: MODES, rce: MODES, tariff: MODES.slice(0, 3), months: [] };
+const H_MODES = { energy: MODES, rce: MODES, tariff: MODES.slice(0, 3), months: [], power: MODES.slice(0, 3) };
 
 function niceStep(span, n = 5) {
   const raw = Math.max(span, 1e-9) / n, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
@@ -650,7 +783,7 @@ class PGEHistory extends HTMLElement {
   open(panel, key, range) {
     this._p = panel; this._k = key; const h = HIST[key], now = new Date();
     const pr = range || panel._range;
-    this._r = h.kind === "energy" && pr ? pr : makeRange(h.kind === "rce" && now.getHours() >= 15 ? "week" : "day", now);
+    this._r = h.kind === "power" ? makeRange("day", range?.start || now) : h.kind === "energy" && pr ? pr : makeRange(h.kind === "rce" && now.getHours() >= 15 ? "week" : "day", now);
     if (h.kind === "tariff" && !H_MODES.tariff.some(x => x[0] === this._r.mode)) this._r = makeRange("day", now);
     document.addEventListener("keydown", this._key);
     this._load();
@@ -659,7 +792,7 @@ class PGEHistory extends HTMLElement {
   _set(r) { if (r && r.start < r.end) { this._r = r; this._load(); } }
   _limit() { // last day a range may start on
     const h = HIST[this._k], t = new Date(), d0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
-    return h.kind === "energy" ? t : h.kind === "rce" ? addDays(d0, 1) : addDays(d0, 400);
+    return h.kind === "energy" || h.kind === "power" ? t : h.kind === "rce" ? addDays(d0, 1) : addDays(d0, 400);
   }
   async _load() {
     const r = this._r, h = HIST[this._k], p = this._p, hass = p._hass, tok = this._tok = (this._tok || 0) + 1;
@@ -686,6 +819,19 @@ class PGEHistory extends HTMLElement {
           else if (days <= 62) { if (t.getDate() % 2 === 1) it.lab = pad(t.getDate()); }
           else if (t.getDate() === 1) it.lab = MONTH_SHORT[t.getMonth()]; });
         d = { items, agg, until: res?.published_until ? new Date(+new Date(res.published_until) + 9e5) : null };
+      } else if (h.kind === "power") {
+        const cfg = pwConfig(hass, p._ids), one = cfg[h.pk] ? { [h.pk]: cfg[h.pk] } : {};
+        const res = await pwLoad(hass, one, +r.start, +r.end);
+        if (res.error) throw new Error(res.error);
+        const s0 = res[h.pk] || [], end = Math.min(+r.end, Date.now()), v0 = pwAt(s0, +r.start);
+        const pts = (isNum(v0) ? [[+r.start, v0]] : []).concat(s0.filter(x => x[0] > +r.start && x[0] < end));
+        const items = pts.map((x, i) => { const t1 = i + 1 < pts.length ? pts[i + 1][0] : end, t = new Date(x[0]);
+          return { t0: x[0], t1, v: x[1], fut: false, tip: `${dayShort(t)} ${t.getFullYear()}, ${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}` }; });
+        const days = (r.end - r.start) / 864e5;
+        for (let t = +r.start; t < +r.end; t += 36e5) { const dd = new Date(t), lab = days <= 1.1 ? (dd.getHours() % 3 ? "" : pad(dd.getHours()) + ":00") : dd.getHours() ? "" : days <= 8 ? dayShort(dd) : dd.getDate() % 2 ? pad(dd.getDate()) : "";
+          if (lab) items.push({ t0: t, t1: t, v: null, lab, tip: "" }); }
+        items.sort((x, y) => x.t0 - y.t0);
+        d = { items, en: pwEnergy(s0, +r.start, end), pk: h.pk };
       } else if (h.kind === "months") {
         const m = p._model(), ms = m.months || {}, keys = Object.keys(ms).filter(x => /^\d{4}-\d{2}$/.test(x)).sort();
         const st = p._hass?.states?.[p._ids?.invoice_forecast], credits = st?.attributes?.deposit_credits || [];
@@ -726,6 +872,11 @@ class PGEHistory extends HTMLElement {
     const ext = f => nums.length ? nums.reduce((a, b) => f(b.v, a.v) ? b : a) : null;
     const mx = ext((a, b) => a > b), mn = ext((a, b) => a < b);
     if (h.kind === "energy") return box("Suma w okresie", h.fmt(d.tot), d.totX || "") + box(d.avgLabel, h.fmt(d.avg)) + box("Najwięcej", mx ? h.fmt(mx.v) : "—", mx?.tip || "") + box("Najmniej", mn ? h.fmt(mn.v) : "—", mn?.tip || "");
+    if (h.kind === "power") {
+      const now = nums.length ? nums.at(-1) : null, kwhS = v => isNum(v) ? kwh(v) : "—";
+      const first = h.pk === "soc" ? box("Teraz / ostatni", now ? h.fmt(now.v) : "—", now?.tip || "") : h.pk === "bat" ? box("Ładowanie", kwhS(d.en.pos), "rozład. " + kwhS(d.en.neg)) : h.pk === "grid" ? box("Pobór z sieci", kwhS(d.en.pos), "oddano " + kwhS(d.en.neg)) : box("Energia w okresie", kwhS(d.en.pos));
+      return first + box("Najwięcej", mx ? h.fmt(mx.v) : "—", mx?.tip || "") + box("Najmniej", mn ? h.fmt(mn.v) : "—", mn?.tip || "") + box("Odczytów", String(nums.length), "surowe, bez uśredniania");
+    }
     if (h.kind === "months") {
       const past = d.items.filter(i => !i.fut && i.key !== d.cur), now = d.items.find(i => i.key === d.cur);
       const sumK = f => d.items.filter(i => i.o).reduce((s, i) => s + (Number(i.o[f]) || 0), 0);
@@ -750,8 +901,8 @@ class PGEHistory extends HTMLElement {
   }
   _draw() {
     const h = HIST[this._k], r = this._r, d = this._d, lim = this._limit(), nx = shiftRange(r, 1);
-    const unit = h.kind === "energy" ? (["imp", "exp", "bal"].includes(this._k) ? "kWh" : "zł") : h.kind === "months" ? "zł" : "zł/kWh";
-    const axis = v => h.kind === "energy" || h.kind === "months" ? String(+v.toFixed(2)).replace(".", ",") : v.toFixed(2).replace(".", ",");
+    const unit = h.kind === "power" ? (h.pk === "soc" ? "%" : "kW") : h.kind === "energy" ? (["imp", "exp", "bal"].includes(this._k) ? "kWh" : "zł") : h.kind === "months" ? "zł" : "zł/kWh";
+    const axis = v => h.kind === "energy" || h.kind === "months" || h.kind === "power" ? String(+v.toFixed(2)).replace(".", ",") : v.toFixed(2).replace(".", ",");
     let body;
     if (!d) body = `<div class="nohist">Ładowanie…</div>`;
     else if (d.error) body = `<div class="nohist">Nie udało się pobrać danych: ${esc(d.error)}</div>`;
@@ -863,6 +1014,56 @@ class PGEPanel extends PGEBase {
     if (rg === this._range && craw && craw !== this._chartRaw) { this._chartRaw = craw; ch = true; }
     if (ch) this._draw();
   }
+  _pwState() {
+    const t = new Date();
+    this._pw ||= { day: new Date(t.getFullYear(), t.getMonth(), t.getDate()), data: null, off: {} };
+    return this._pw;
+  }
+  _pwEnsure() {
+    const st = this._pwState(), cfg = pwConfig(this._hass, this._ids), k = isoDate(st.day) + JSON.stringify(cfg);
+    if (!Object.keys(cfg).length || st.busy) return;
+    const today = isoDate(st.day) === isoDate(new Date());
+    if (st.key === k && (!today || Date.now() - st.at < 60000)) return;
+    st.busy = true;
+    pwLoad(this._hass, cfg, +st.day, +addDays(st.day, 1)).then(d => {
+      st.busy = false;
+      if (k !== isoDate(st.day) + JSON.stringify(pwConfig(this._hass, this._ids))) { this._pwEnsure(); return; }
+      st.data = d; st.key = k; st.at = Date.now(); this._draw();
+    });
+  }
+  _pwDay(day) { const st = this._pwState(); st.day = day; st.data = null; st.key = ""; this._draw(); }
+  _bindPower(m) {
+    const card = this.shadowRoot.querySelector(".pw"); if (!card) return;
+    const st = this._pwState(), cfg = pwConfig(this._hass, this._ids);
+    card.querySelectorAll("[data-pw]").forEach(b => b.onclick = () => this._pwDay(addDays(st.day, Number(b.dataset.pw))));
+    card.querySelectorAll("[data-pwd]").forEach(b => b.onclick = () => { const t = new Date(); this._pwDay(addDays(new Date(t.getFullYear(), t.getMonth(), t.getDate()), Number(b.dataset.pwd))); });
+    card.querySelectorAll("[data-lg]").forEach(b => b.onclick = () => { st.off[b.dataset.lg] = !st.off[b.dataset.lg]; this._draw(); });
+    const svg = card.querySelector(".pw-svg"), ov = card.querySelector(".pw-ov"), tip = card.querySelector(".pw-tip");
+    if (!ov || !svg) return;
+    const hl = svg.querySelector(".pw-hl");
+    const a = +ov.dataset.a, b = +ov.dataset.b, L = +ov.dataset.l, R = +ov.dataset.r, W = +ov.dataset.w, tz = m.tariff?.price_gross || {};
+    const q = k => card.querySelector(`[data-pp="${k}"]`), def = { buy: q("buy").textContent, rce: q("rce").textContent, zone: q("zone").textContent };
+    const day = isoDate(st.day), rceMul = m.rceMul || 1.23;
+    if (st.rce?.day !== day && this._hass?.callApi) { // real 15-min RCE for hover, fetched once per day
+      st.rce = { day, rows: [] };
+      this._hass.callApi("GET", `pge_net_billing/rce?start=${day}&end=${day}&agg=raw`)
+        .then(res => { if (st.rce?.day === day) st.rce.rows = (res?.rows || []).map(x => [Date.parse(x[0]), x[1] * rceMul]); }).catch(() => {});
+    }
+    ov.onmousemove = e => {
+      const bx = svg.getBoundingClientRect(), fx = (e.clientX - bx.left) / bx.width * W, t = a + (fx - L) / (W - L - R) * (b - a);
+      hl.style.display = ""; hl.setAttribute("x1", fx); hl.setAttribute("x2", fx);
+      const dt = new Date(t), z = g12Zone(dt);
+      const rows = PW_ORDER.filter(k => cfg[k] && !st.off[k]).map(k => { const v = pwAt(st.data?.[k], t); return `<div class="r"><span><i style="background:${PW[k].color}"></i>${PW[k].label}</span><b>${!isNum(v) ? "—" : k === "soc" ? Math.round(v) + "%" : NF.format(v) + " kW"}</b></div>`; }).join("");
+      tip.innerHTML = `<div class="tt">${pad(dt.getHours())}:${pad(dt.getMinutes())} · ${z === "s2" ? "strefa nocna" : "strefa dzienna"}</div>${rows}`;
+      tip.hidden = false; tip.style.left = `clamp(110px, ${fx / 10}%, calc(100% - 110px))`;
+      const hit = (st.rce?.rows || []).find(x => t >= x[0] && t < x[0] + 9e5);
+      q("buy").textContent = isNum(tz[z]) ? NF4.format(tz[z]) + " zł/kWh" : "—";
+      q("rce").textContent = hit ? NF4.format(hit[1]) + " zł/kWh" : "—";
+      q("zone").textContent = z === "s2" ? "strefa nocna" : "strefa dzienna";
+      q("at").textContent = ` · ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+    };
+    ov.onmouseleave = () => { tip.hidden = true; hl.style.display = "none"; q("buy").textContent = def.buy; q("rce").textContent = def.rce; q("zone").textContent = def.zone; q("at").textContent = ""; };
+  }
   _setRange(r) {
     if (!r || !(r.start < r.end)) return;
     this._range = r; this._chartRaw = null; this._refresh();
@@ -939,7 +1140,7 @@ class PGEPanel extends PGEBase {
     const row = (label, r, i) => `<tr class="hist" data-hist="bal" data-pi="${i}" tabindex="0"><td>${esc(label)}</td><td>${kwh(r.imp)}</td><td>${kwh(r.exp)}</td><td class="${isNum(r.bal) && r.bal < 0 ? "t-red" : "t-green"}">${kwh(r.bal, true)}</td></tr>`;
     const frow = (label, r, i) => `<tr class="hist" data-hist="profit" data-pi="${i}" tabindex="0"><td>${esc(label)}</td><td>${zl(r.cost)}</td><td>${zl(r.sell)}</td><td class="${isNum(r.saldo) && r.saldo < 0 ? "t-red" : "t-green"}">${zl(r.saldo, true)}</td></tr>`;
 
-    this.shadowRoot.innerHTML = `<style>${CSS}</style><main class="pf">
+    this.shadowRoot.innerHTML = `<style>${CSS}${PW_CSS}</style><main class="pf">
 <div class="pf-grid"><div class="main">
   <header class="pf-head"><div class="pf-brand">${logo(c, "lg")}<div><h1>PGE Net-Billing</h1><div class="pf-sub">PGE Obrót · Dystrybucja · RCE · ${esc(tariff?.name || "G12")}</div></div></div>
     <div class="pf-date"><div class="pf-date-row">${icon("calendar-month", "blue")}<span class="lbl">${esc(monthName(m.sel))}</span><button class="nav" data-d="-1" ${this._offset <= -24 ? "disabled" : ""} aria-label="Poprzedni miesiąc"><ha-icon icon="mdi:chevron-left"></ha-icon></button><button class="nav" data-d="1" ${this._offset >= 0 ? "disabled" : ""} aria-label="Następny miesiąc"><ha-icon icon="mdi:chevron-right"></ha-icon></button></div>
@@ -972,6 +1173,8 @@ class PGEPanel extends PGEBase {
     </div>
   </section>
 
+  ${pwCard(this._pwState(), pwConfig(this._hass, this._ids), m)}
+
   ${chartCard(ch)}
 
   <section class="bot">
@@ -996,8 +1199,9 @@ class PGEPanel extends PGEBase {
 <div class="foot">Kwoty są prognozą lokalną integracji (stawki z konfiguracji, RCE z PSE), nie fakturą PGE. Zakup energii w tabeli i kafelku – brutto (bez dystrybucji). v${VERSION}</div>
 </main>`;
     this._bindChart(m);
+    this._bindPower(m); this._pwEnsure();
     this.shadowRoot.querySelectorAll("[data-hist]").forEach(el => {
-      const go = () => openHistory(this, el.dataset.hist, el.dataset.pi !== undefined ? periodRange(m, Number(el.dataset.pi)) : undefined);
+      const go = () => openHistory(this, el.dataset.hist, el.dataset.pi !== undefined ? periodRange(m, Number(el.dataset.pi)) : el.dataset.hist.startsWith("pw_") ? makeRange("day", this._pwState().day) : undefined);
       el.onclick = e => { if (e.target.closest(".info")) return; go(); };
       el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } };
     });

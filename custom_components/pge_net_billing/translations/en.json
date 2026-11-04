@@ -3,7 +3,31 @@
     "step": {
       "user": {
         "title": "PGE Net-Billing estimate",
-        "description": "Choose cumulative kWh sensors. Prices are net PLN. RCE is a manual placeholder, not PSE live data."
+        "description": "Choose cumulative kWh sensors. Prices are net PLN. RCE is a manual placeholder, not PSE live data.",
+        "data": {
+          "pv_power_entity": "PV power (optional)",
+          "battery_power_entity": "Battery power (optional)",
+          "battery_soc_entity": "Battery SOC % (optional)",
+          "load_power_entity": "House load power (optional)",
+          "grid_power_entity": "Grid power (optional)",
+          "battery_invert": "Invert battery sign",
+          "grid_invert": "Invert grid sign"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "pv_power_entity": "PV power (optional)",
+          "battery_power_entity": "Battery power (optional)",
+          "battery_soc_entity": "Battery SOC % (optional)",
+          "load_power_entity": "House load power (optional)",
+          "grid_power_entity": "Grid power (optional)",
+          "battery_invert": "Invert battery sign",
+          "grid_invert": "Invert grid sign"
+        }
       }
     }
   }

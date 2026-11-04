@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.5.6
+# PGE Net-Billing v1.6.0
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -16,6 +16,12 @@ Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing 
 Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Nowe w v1.6.0 – wykres „Moc i bateria”
+- Nowa karta nad „Przepływem energii”: SOC baterii (%, prawa oś) oraz moc produkcji PV, baterii, sieci i konsumpcji (kW) w ciągu dnia. Strefy nocne G12 podświetlone, linia „teraz”, ‹ › / Wczoraj / Dzisiaj.
+- Dane = **surowe odczyty z historii Home Assistant** (bez uśredniania). Najechanie: wartości wszystkich linii w danej chwili + cena zakupu G12 i cena RCE brutto dla tego kwadransu. Klik w legendę włącza / wyłącza linię.
+- Kafle pod wykresem (Produkcja PV, Ładowanie / rozładowanie baterii, Pobór / oddanie, Konsumpcja, SOC) – energia = moc × czas między kolejnymi odczytami. Klik w kafel = modal z historią tej encji (Dzień / Tydzień / Miesiąc).
+- **Konfiguracja:** Ustawienia → Urządzenia i usługi → PGE Net-Billing → Konfiguruj → wskaż encje mocy PV, mocy baterii, SOC, mocy konsumpcji i mocy sieci (wszystkie opcjonalne; W lub kW, przeliczane automatycznie). Niewskazana encja = brak linii i kafla, nic nie jest dopowiadane. Jeśli Twoje urządzenie ma odwrotny znak (np. + = rozładowanie), zaznacz „Odwróć znak baterii / sieci”.
 
 ## Nowe w v1.5.6 – sensor RCE też brutto
 - Sensor `Aktualna RCE brutto` (wcześniej „Aktualna RCE”) ma stan **brutto** = RCE z PSE × `rce_multiplier` (domyślnie 1,23). Atrybuty `today` / `tomorrow` też brutto; cena netto bieżącego kwadransu w atrybucie `net`.

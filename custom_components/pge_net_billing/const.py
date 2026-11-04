@@ -1,5 +1,9 @@
 DOMAIN = "pge_net_billing"
-VERSION = "1.5.6"
+VERSION = "1.6.0"
+# v1.6.0: optional live power sensors for the "Moc i bateria" chart (W or kW, SOC in %)
+POWER_ENTITIES = ["pv_power_entity", "battery_power_entity", "battery_soc_entity", "load_power_entity", "grid_power_entity"]
+# sign flags: chart convention is + = charging / import from grid
+POWER_FLAGS = ["battery_invert", "grid_invert"]
 DEFAULTS = {
     "start_date": "2026-11-01", "initial_deposit": 0.0,
     "buy_s1": 0.56489, "buy_s2": 0.37303,

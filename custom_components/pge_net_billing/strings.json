@@ -22,7 +22,14 @@
           "fixed_subscription": "Abonament netto PLN/mies.",
           "vat": "VAT (0.23)",
           "rce_price": "Ręczna cena RCE netto PLN/kWh (0 = brak ceny)",
-          "rce_multiplier": "Mnożnik depozytu"
+          "rce_multiplier": "Mnożnik depozytu",
+          "pv_power_entity": "Moc produkcji PV (W/kW) – opcjonalnie",
+          "battery_power_entity": "Moc baterii (W/kW) – opcjonalnie",
+          "battery_soc_entity": "SOC baterii (%) – opcjonalnie",
+          "load_power_entity": "Moc konsumpcji domu (W/kW) – opcjonalnie",
+          "grid_power_entity": "Moc sieci (W/kW) – opcjonalnie",
+          "battery_invert": "Odwróć znak baterii (gdy + = rozładowanie)",
+          "grid_invert": "Odwróć znak sieci (gdy + = oddawanie)"
         }
       }
     }
@@ -49,7 +56,14 @@
           "fixed_subscription": "fixed_subscription",
           "vat": "vat",
           "rce_price": "rce_price",
-          "rce_multiplier": "rce_multiplier"
+          "rce_multiplier": "rce_multiplier",
+          "pv_power_entity": "Moc produkcji PV (W/kW) – opcjonalnie",
+          "battery_power_entity": "Moc baterii (W/kW) – opcjonalnie",
+          "battery_soc_entity": "SOC baterii (%) – opcjonalnie",
+          "load_power_entity": "Moc konsumpcji domu (W/kW) – opcjonalnie",
+          "grid_power_entity": "Moc sieci (W/kW) – opcjonalnie",
+          "battery_invert": "Odwróć znak baterii (gdy + = rozładowanie)",
+          "grid_invert": "Odwróć znak sieci (gdy + = oddawanie)"
         }
       }
     }
