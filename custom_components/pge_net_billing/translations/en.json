@@ -17,8 +17,7 @@
           "pv_total_entity": "Inverter PV production total (kWh, optional)",
           "battery_charge_total_entity": "Inverter battery charge total (kWh, optional)",
           "battery_discharge_total_entity": "Inverter battery discharge total (kWh, optional)",
-          "load_total_entity": "Inverter house load energy (kWh, optional)",
-          "battery_efficiency": "Battery round-trip efficiency (0.90)"
+          "load_total_entity": "Inverter house load energy (kWh, optional)"
         }
       }
     }
@@ -39,8 +38,7 @@
           "pv_total_entity": "Inverter PV production total (kWh, optional)",
           "battery_charge_total_entity": "Inverter battery charge total (kWh, optional)",
           "battery_discharge_total_entity": "Inverter battery discharge total (kWh, optional)",
-          "load_total_entity": "Inverter house load energy (kWh, optional)",
-          "battery_efficiency": "Battery round-trip efficiency (0.90)"
+          "load_total_entity": "Inverter house load energy (kWh, optional)"
         }
       }
     }

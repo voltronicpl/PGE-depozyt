@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.8.0
+# PGE Net-Billing v1.8.1
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -16,6 +16,10 @@ Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing 
 Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Nowe w v1.8.1
+- Próg opłacalności = koszt kWh w magazynie + dystrybucja zmienna brutto – bez szacowanej sprawności baterii (opcja „Sprawność baterii” usunięta).
+- Kafel „Bateria: weszło − wyszło” = ładowanie − rozładowanie z liczników falownika (kWh i zł), z dopiskiem zmiany SOC, bo część energii może dalej być w baterii.
 
 ## Nowe w v1.8.0 – „Zarobek z automatyki”
 - Sekcja Pieniądze: kafle „Zakup – poszło na dom” / „Zakup – do magazynu” (w każdym kwadransie najpierw dom, reszta do baterii) + pasek „Zapłacono = na dom + do magazynu · sprzedano X za Y”.

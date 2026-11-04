@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.8.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.8.1 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.8.0";
+const VERSION = "1.8.1";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -775,11 +775,11 @@ function pwAgg(D, slots, a, b, tz) {
     if (isNum(r.val)) r.profit = r.val - (r.exp || 0) * (r.batKwh > 0 ? r.batCost / r.batKwh : 0);
   }
   r.buy = isNum(r.cost) && r.imp > 0 ? r.cost / r.imp : null;
-  // v1.8.0: automation profit – a sold kWh pays off only above: (cost of the kWh in storage + distribution you pay anyway when buying it back) / battery efficiency
+  // automation profit – a sold kWh pays off only above: cost of the kWh in storage + distribution you pay anyway when buying it back (deposit covers energy only)
   const ap = D.ap;
   if (ap && isNum(r.exp)) {
     const sc = isNum(ap.fixedSc) ? ap.fixedSc : r.batKwh > 0 ? r.batCost / r.batKwh : isNum(ap.cost) ? ap.cost : isNum(r.buy) ? r.buy : ap.fallback;
-    const thr = (sc + ap.dist) / ap.eff;
+    const thr = sc + ap.dist;
     const A = r.ap = { sc, thr, okK: 0, okV: 0, okG: 0, badK: 0, badV: 0, badG: 0, best: null, worst: null };
     for (const s of slots) {
       if (s.t < a || s.t >= b || !s.past || !(s.de > 0.001) || !isNum(s.sell)) continue;
@@ -788,8 +788,10 @@ function pwAgg(D, slots, a, b, tz) {
       if (!A.best || s.sell > A.best.sell) A.best = x; if (!A.worst || s.sell < A.worst.sell) A.worst = x;
     }
     A.gain = A.okG + A.badG;
-    const fromBat = isNum(r.dis) ? r.dis : r.exp;
-    A.loss = isNum(fromBat) ? fromBat * sc * (1 / ap.eff - 1) : null;
+    // battery losses measured by the counters: charged − discharged (part of it may still sit in the battery -> SOC change shown next to it)
+    A.lossK = isNum(r.ch) && isNum(r.dis) ? r.ch - r.dis : null;
+    A.loss = isNum(A.lossK) ? A.lossK * sc : null;
+    const so = D.raw?.soc; A.socD = !D.long && so?.length && isNum(pwAt(so, a)) && isNum(pwAt(so, end)) ? pwAt(so, end) - pwAt(so, a) : null;
     A.toBat = slots.filter(s => s.t >= a && s.t < b && s.past).reduce((q, s) => q + (s.hb || 0), 0);
   }
   r.sell = isNum(r.val) && r.exp > 0 ? r.val / r.exp : null;
@@ -804,7 +806,7 @@ function pwBuckets(r) {
 function pwModel(st, D, m) {
   const r = st.range, tz = m.tariff?.price_gross || {};
   if (!D || D.error) return { r, D };
-  const tr = m.tariff || {}, pw = tr.dist_gross ? { dist: Number(tr.dist_gross.s1), eff: Math.min(1, Math.max(0.5, Number(st.eff || 0.9))), fallback: Number(tr.price_gross?.s1) } : null;
+  const tr = m.tariff || {}, pw = tr.dist_gross ? { dist: Number(tr.dist_gross.s1), fallback: Number(tr.price_gross?.s1) } : null;
   D.ap = pw && isNum(pw.dist) ? pw : null;
   const slots = pwSlots(D, tz); if (D.ap) D.ap.fixedSc = null;
   const tot = pwAgg(D, slots, D.a, D.b, tz); if (D.ap && tot.ap) D.ap.fixedSc = tot.ap.sc; // buckets use the period threshold
@@ -1001,14 +1003,14 @@ function apSection(M, cfg, isDay) {
   const when = x => x ? `${isDay ? "" : dayShort(new Date(x.t)) + " "}${pad(new Date(x.t).getHours())}:${pad(new Date(x.t).getMinutes())}–${pad(new Date(x.t + 9e5).getHours())}:${pad(new Date(x.t + 9e5).getMinutes())}` : "";
   const sold = A ? A.okK + A.badK : 0;
   const tiles = !A ? `<div class="nohist">Do policzenia progu potrzebne są liczniki falownika (import, eksport) i zużycie domu.</div>` : [
-    tile("sell", TONE.green, "Realny zarobek automatyki", zl(A.gain, true), "po odjęciu zakupu, dystrybucji i strat baterii", A.gain < 0 ? TONE.red : TONE.green),
-    tile("rce", CYAN, "Próg opłacalności sprzedaży", price(A.thr), `(kWh w magazynie ${NF4.format(A.sc)} + dystr. ${NF4.format(M.D.ap.dist)}) ÷ ${Math.round(M.D.ap.eff * 100)}%`),
+    tile("sell", TONE.green, "Realny zarobek automatyki", zl(A.gain, true), "sprzedaż − (koszt kWh w magazynie + dystrybucja)", A.gain < 0 ? TONE.red : TONE.green),
+    tile("rce", CYAN, "Próg opłacalności sprzedaży", price(A.thr), `kWh w magazynie ${NF4.format(A.sc)} + dystrybucja ${NF4.format(M.D.ap.dist)}`),
     tile("rce", TONE.green, "kWh sprzedane powyżej progu", kwh(A.okK), `za ${zl(A.okV)} · zysk ${zl(A.okG, true)} · ${pctS(A.okK, sold)}`),
     tile("rce", TONE.red, "kWh sprzedane poniżej progu", kwh(A.badK), `za ${zl(A.badV)} · strata ${zl(A.badG, true)} · ${pctS(A.badK, sold)}`, null, A.badK > 0.001 ? " pw-bad" : ""),
     tile("rce", TONE.red, "Najgorsza sprzedaż", A.worst ? price(A.worst.sell) : "—", A.worst ? `${when(A.worst)} · ${kwh(A.worst.kwh)} · ${zl(A.worst.g, true)}` : "brak sprzedaży", A.worst && A.worst.g >= 0 ? TONE.green : TONE.red),
     tile("rce", CYAN, "Najlepsza sprzedaż", A.best ? price(A.best.sell) : "—", A.best ? `${when(A.best)} · ${kwh(A.best.kwh)} · ${zl(A.best.g, true)}` : "brak sprzedaży"),
     tile("cost", "#8b7cff", "Średni koszt kWh w magazynie", price(A.sc), isNum(T.batKwh) && T.batKwh > 0 ? `z ${kwh(T.batKwh)} kupionych do baterii` : "brak zakupu do baterii – wg średniej ceny kupna", "#b7aaff"),
-    tile("pw_bat", TONE.orange, "Straty baterii (szac.)", zl(A.loss), `${Math.round((1 - M.D.ap.eff) * 100)}% energii z magazynu · sprawność ${Math.round(M.D.ap.eff * 100)}%`),
+    tile("pw_bat", TONE.orange, "Bateria: weszło − wyszło", isNum(A.lossK) ? kwh(A.lossK) : "—", isNum(A.lossK) ? `${zl(A.loss)} · ${isNum(A.socD) ? `SOC ${A.socD >= 0 ? "+" : ""}${Math.round(A.socD)} pp (część zostaje w baterii)` : "liczniki falownika"}` : "brak liczników baterii"),
   ].join("");
   const bar = A && sold > 0 ? `<div class="ap-bar"><i style="width:${A.okK / sold * 100}%;background:${TONE.green}"></i><i style="width:${A.badK / sold * 100}%;background:${TONE.red}"></i></div><div class="ap-leg"><span>sprzedane powyżej progu ${pctS(A.okK, sold)}</span><span>poniżej progu ${pctS(A.badK, sold)}</span></div>` : "";
   const strip = AB && M.r.mode === "day" ? `<div class="ap-strip">${AB.list.map(x => { const c = !x.live ? "" : x.badK > 0.001 ? TONE.red : x.okK > 0.001 ? TONE.green : x.bk > 0.001 ? "#8b7cff" : ""; return `<div style="${c ? `background:${c};color:#06111b` : ""}${!x.live ? ";opacity:.35" : ""}">${x.lab}</div>`; }).join("")}</div>` : "";
@@ -1339,7 +1341,7 @@ class PGEPanel extends PGEBase {
     }).catch(e => { st.busy = false; st.D = { error: e?.message || String(e) }; st.key = k; st.at = Date.now(); this._draw(); });
   }
   _pwSet(range) { const st = this._pwState(); if (!range || !(range.start < range.end)) return; st.range = range; st.D = null; st.key = ""; this._draw(); }
-  _pwModel(m) { const st = this._pwState(); st.eff = this._hass?.states?.[this._ids?.invoice_forecast]?.attributes?.power?.efficiency; return st.D ? pwModel(st, st.D, m) : null; }
+  _pwModel(m) { const st = this._pwState(); return st.D ? pwModel(st, st.D, m) : null; }
   _bindPower(m, M) {
     const card = this.shadowRoot.querySelector(".pw"); if (!card) return;
     const st = this._pwState(), cfg = pwConfig(this._hass, this._ids), today = () => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); };
