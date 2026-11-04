@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.7.3 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.7.4 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.7.3";
+const VERSION = "1.7.4";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -754,7 +754,7 @@ function pwAgg(D, slots, a, b, tz) {
   }
   for (const s of slots) {
     if (s.t < a || s.t >= b || !s.past) continue;
-    if (isNum(s.di)) { add("imp", s.di); if (isNum(s.buy)) add("cost", s.di * s.buy); }
+    if (isNum(s.di)) { add("imp", s.di); if (isNum(s.buy)) add("cost", s.di * s.buy); add(s.z === "s2" ? "impS2" : "impS1", s.di); if (isNum(s.buy)) add(s.z === "s2" ? "costS2" : "costS1", s.di * s.buy); }
     if (isNum(s.de)) { add("exp", s.de); if (isNum(s.sell)) add("val", s.de * s.sell); if (s.de > 0.001 && isNum(s.sell) && (!r.best || s.sell > r.best.sell)) r.best = { sell: s.sell, t: s.t, kwh: s.de }; }
   }
   r.buy = isNum(r.cost) && r.imp > 0 ? r.cost / r.imp : null;
@@ -855,6 +855,8 @@ function pwCard(st, cfg, m, M, hass) {
     tile("dis", "pw_bat", PW.bat.color, "Rozładowanie baterii", cfg.bat || cfg.disE ? kwh(T.dis) : "—", cfg.bat || cfg.disE ? (cfg.bat ? `maks. moc ${kw(T.disMax)}` : "") + (T.src?.dis ? (cfg.bat ? " · " : "") + "licznik" : "") : miss, "#b7aaff"),
     tile("soc", "pw_soc", TONE.blue, "SOC magazynu min / maks", cfg.soc ? `${pct(T.sMin)} <span class="pw-arr">→</span> ${pct(T.sMax)}` : "—", cfg.soc ? `${isNum(T.tMin) ? "min " + at(T.tMin) + " · maks " + at(T.tMax) : ""}${live && isNum(nowSoc) ? " · teraz " + pct(nowSoc) : ""}` : miss),
     tile("imp", cfg.grid ? "pw_grid" : "cost", PW.grid.color, "Import z sieci", cfg.imp ? kwh(T.imp) : "—", cfg.imp ? "licznik falownika" : miss),
+    tile("cheap", "tariff", TONE.blue, "Kupno – tania taryfa (nocna)", cfg.imp ? kwh(T.impS2 || 0) : "—", cfg.imp ? `${zl(T.costS2 || 0)} · ${isNum(T.imp) && T.imp > 0 ? Math.round((T.impS2 || 0) / T.imp * 100) : 0}% importu` : miss, "#7fb3ff"),
+    tile("dear", "tariff", PINK, "Kupno – droga taryfa (dzienna)", cfg.imp ? kwh(T.impS1 || 0) : "—", cfg.imp ? `${zl(T.costS1 || 0)} · ${isNum(T.imp) && T.imp > 0 ? Math.round((T.impS1 || 0) / T.imp * 100) : 0}% importu` : miss),
     tile("exp", cfg.grid ? "pw_grid" : "sell", PW.grid.color, "Eksport do sieci", cfg.exp ? kwh(T.exp) : "—", cfg.exp ? "licznik falownika" : miss, "#ffd27a"),
     tile("load", "pw_load", PW.load.color, "Pobór domu", cfg.load || cfg.loadE ? kwh(T.load) : "—", cfg.load || cfg.loadE ? `${T.src?.load ? "licznik · " : ""}szczyt ${kw(T.ldMax)}${live && isDay ? " · teraz " + kw(liveVal("load")) : ""}` : miss),
   ].join("");
@@ -1247,7 +1249,7 @@ class PGEPanel extends PGEBase {
         const v = cur.v, cx = X((cur.a + cur.b) / 2);
         dots.innerHTML = cfg.soc && isNum(v.sMax) ? `<circle cx="${cx}" cy="${YS(v.sMax)}" r="4.5" fill="${TONE.blue}"/>` : "";
         const bst = v.best ? `${price(v.best.sell)} (${r2(v.best.t)})` : "—";
-        place(cx, `<div class="tt">${esc(cur.tip)}${cur.b > Date.now() ? " (do teraz)" : ""} · kliknij = szczegóły</div>${cfg.imp ? row(PINK, "Kupiłeś po (śr.)", price(v.buy)) + row(TONE.red, "Zapłacono", zl(v.cost)) : ""}${cfg.exp ? row(CYAN, "Sprzedałeś po (śr.)", price(v.sell)) + row(CYAN, "Najwyższa sprzedaż", bst) + row(TONE.green, "Za sprzedaż", zl(v.val)) : ""}<hr>${cfg.pv ? row(PW.pv.color, "Produkcja", kwh(v.pv)) : ""}${cfg.bat ? row(PW.bat.color, "Ładowanie / rozład.", kwh(v.ch) + " / " + kwh(v.dis)) : ""}${cfg.imp || cfg.exp ? row(PW.grid.color, "Import / eksport", kwh(v.imp) + " / " + kwh(v.exp)) : ""}${cfg.load ? row(PW.load.color, "Pobór domu", kwh(v.load)) : ""}${cfg.soc ? row(TONE.blue, "SOC min / maks", (isNum(v.sMin) ? Math.round(v.sMin) + "%" : "—") + " → " + (isNum(v.sMax) ? Math.round(v.sMax) + "%" : "—")) : ""}`);
+        place(cx, `<div class="tt">${esc(cur.tip)}${cur.b > Date.now() ? " (do teraz)" : ""} · kliknij = szczegóły</div>${cfg.imp ? row(PINK, "Kupiłeś po (śr.)", price(v.buy)) + row(TONE.red, "Zapłacono", zl(v.cost)) : ""}${cfg.exp ? row(CYAN, "Sprzedałeś po (śr.)", price(v.sell)) + row(CYAN, "Najwyższa sprzedaż", bst) + row(TONE.green, "Za sprzedaż", zl(v.val)) : ""}<hr>${cfg.pv ? row(PW.pv.color, "Produkcja", kwh(v.pv)) : ""}${cfg.bat ? row(PW.bat.color, "Ładowanie / rozład.", kwh(v.ch) + " / " + kwh(v.dis)) : ""}${cfg.imp || cfg.exp ? row(PW.grid.color, "Import / eksport", kwh(v.imp) + " / " + kwh(v.exp)) : ""}${cfg.imp ? row("#7fb3ff", "Kupno tanio / drogo", kwh(v.impS2 || 0) + " / " + kwh(v.impS1 || 0)) : ""}${cfg.load ? row(PW.load.color, "Pobór domu", kwh(v.load)) : ""}${cfg.soc ? row(TONE.blue, "SOC min / maks", (isNum(v.sMin) ? Math.round(v.sMin) + "%" : "—") + " → " + (isNum(v.sMax) ? Math.round(v.sMax) + "%" : "—")) : ""}`);
       };
       ov.onclick = () => { if (cur) this._pwSet(st.range.mode === "year" ? makeRange("month", cur.d) : makeRange("day", cur.d)); };
       ov.style.cursor = "pointer";
