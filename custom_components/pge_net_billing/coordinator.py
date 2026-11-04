@@ -7,7 +7,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
-from .const import DEFAULTS, POWER_ENTITIES, POWER_FLAGS
+from .const import DEFAULTS, POWER_ENTITIES, POWER_FLAGS, auto_entity
 from .pse import fetch_day, remember, WARSAW
 from .settlement import zone, month_key, settle_months, money, add_months
 
@@ -242,7 +242,7 @@ class PGELedger:
             return {
                 'months': self._settlements(credits),
                 'deposit_credits': credits,
-                'power': {**{k.replace('_entity', ''): s.get(k) for k in POWER_ENTITIES},
+                'power': {**{k.replace('_entity', ''): auto_entity(self.hass, k, s.get(k)) for k in POWER_ENTITIES},
                           **{k: bool(s.get(k, False)) for k in POWER_FLAGS}},
                 'tariff': {'name': 'G12', 'zone': z, 'price_gross': price, 'vat': vat},
             }

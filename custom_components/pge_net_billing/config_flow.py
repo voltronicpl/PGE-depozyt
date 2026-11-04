@@ -3,13 +3,13 @@ from datetime import date
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.helpers import selector
-from .const import DOMAIN, DEFAULTS, POWER_ENTITIES, POWER_FLAGS
+from .const import DOMAIN, DEFAULTS, POWER_ENTITIES, POWER_FLAGS, auto_entity
 
 
-def _power_schema(current):
+def _power_schema(current, hass=None):
     out = {}
     for key in POWER_ENTITIES:
-        out[vol.Optional(key, description={"suggested_value": current.get(key)})] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+        out[vol.Optional(key, description={"suggested_value": auto_entity(hass, key, current.get(key))})] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
     for key in POWER_FLAGS:
         out[vol.Optional(key, default=bool(current.get(key, False)))] = bool
     return out
@@ -27,7 +27,7 @@ class PGEFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = {
             vol.Optional("import_entity"): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional("export_entity"): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            **_power_schema({}),
+            **_power_schema({}, self.hass),
         }
         for key, value in DEFAULTS.items():
             typ = str if isinstance(value, str) else vol.Coerce(float)
@@ -50,7 +50,7 @@ class PGEOptionsFlow(config_entries.OptionsFlow):
         schema = {
             vol.Optional("import_entity", default=current.get("import_entity")): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional("export_entity", default=current.get("export_entity")): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-            **_power_schema(current),
+            **_power_schema(current, self.hass),
         }
         for key, default in DEFAULTS.items():
             val=current.get(key,default)
