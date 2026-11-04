@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.6.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.7.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.6.0";
+const VERSION = "1.7.0";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -590,15 +590,20 @@ function chartCard(ch) {
 </section>`;
 }
 
-/* ---------- "Moc i bateria" chart (v1.6.0): raw HA history of the configured power sensors ---------- */
+/* ---------- "Moc i bateria" (v1.7.0): power lines, neon buy / sell prices, inverter counters ---------- */
+const PINK = "#ff2bd6", CYAN = "#00f5ff";
 const PW = {
-  soc: { label: "SOC", color: TONE.blue, unit: "%", attr: "battery_soc" },
-  pv: { label: "Produkcja", color: TONE.green, unit: "kW", attr: "pv_power" },
-  bat: { label: "Bateria", color: "#8b7cff", unit: "kW", attr: "battery_power", inv: "battery_invert" },
-  grid: { label: "Sieć", color: TONE.orange, unit: "kW", attr: "grid_power", inv: "grid_invert" },
-  load: { label: "Konsumpcja", color: TONE.red, unit: "kW", attr: "load_power" },
+  soc: { label: "SOC magazynu", color: TONE.blue, attr: "battery_soc", kind: "pct" },
+  pv: { label: "Produkcja", color: TONE.green, attr: "pv_power", kind: "power" },
+  bat: { label: "Bateria", color: "#8b7cff", attr: "battery_power", inv: "battery_invert", kind: "power" },
+  grid: { label: "Sieć", color: TONE.orange, attr: "grid_power", inv: "grid_invert", kind: "power" },
+  load: { label: "Pobór domu", color: TONE.red, attr: "load_power", kind: "power" },
+  imp: { label: "Import (licznik)", color: TONE.orange, attr: "grid_import_total", kind: "energy" },
+  exp: { label: "Eksport (licznik)", color: TONE.orange, attr: "grid_export_total", kind: "energy" },
 };
-const PW_ORDER = ["soc", "bat", "grid", "pv", "load"];
+const PW_LINES = ["bat", "grid", "pv", "load"];
+const PW_LEGEND = [["buy", "Cena kupna (G12)", PINK], ["sell", "Cena sprzedaży (RCE)", CYAN], ["soc", "SOC magazynu", TONE.blue], ["pv", "Produkcja", TONE.green], ["bat", "Bateria", "#8b7cff"], ["grid", "Sieć / import–eksport", TONE.orange], ["load", "Pobór domu", TONE.red]];
+const PW_MODES = [["week", "Tydzień"], ["month", "Miesiąc"], ["year", "Rok"]];
 const pwCache = new Map();
 function pwConfig(hass, ids) {
   const p = hass?.states?.[ids?.invoice_forecast]?.attributes?.power || {};
@@ -606,23 +611,27 @@ function pwConfig(hass, ids) {
   for (const k in PW) { const id = p[PW[k].attr]; if (id && hass?.states?.[id]) out[k] = { id, sign: PW[k].inv && p[PW[k].inv] ? -1 : 1 }; }
   return out;
 }
-// raw recorded states, no averaging: [[ms, value], ...] in kW (W converted) or %
+const pwFactor = (k, hass, id) => {
+  const u = String(hass.states[id]?.attributes?.unit_of_measurement || "").trim();
+  if (PW[k].kind === "pct") return 1;
+  if (PW[k].kind === "energy") return u === "Wh" ? 0.001 : u === "MWh" ? 1000 : 1;
+  return u === "W" ? 0.001 : u === "MW" ? 1000 : 1;
+};
+// raw recorded states, no averaging: [[ms, value], ...] in kW / kWh / %
 async function pwLoad(hass, cfg, start, end) {
   const keys = Object.keys(cfg);
   if (!keys.length || !hass?.callWS) return {};
-  const live = end > Date.now();
-  const ck = keys.map(k => cfg[k].id + cfg[k].sign).join(",") + "|" + +start + "|" + +end;
+  const ck = "raw|" + keys.map(k => cfg[k].id + cfg[k].sign).join(",") + "|" + +start + "|" + +end;
   const hit = pwCache.get(ck);
-  if (hit && (!live || Date.now() - hit.t < 60000)) return hit.p;
+  if (hit && (end <= Date.now() || Date.now() - hit.t < 60000)) return hit.p;
   const p = hass.callWS({
     type: "history/history_during_period", start_time: new Date(start).toISOString(), end_time: new Date(Math.min(+end, Date.now())).toISOString(),
     entity_ids: keys.map(k => cfg[k].id), minimal_response: true, no_attributes: true, significant_changes_only: false,
   }).then(res => {
     const out = {};
     for (const k of keys) {
-      const { id, sign } = cfg[k], unit = String(hass.states[id]?.attributes?.unit_of_measurement || "").trim();
-      const f = k === "soc" ? 1 : unit === "W" ? 0.001 : unit === "MW" ? 1000 : 1;
-      out[k] = (res?.[id] || []).map(x => [isNum(x.lu) ? Math.round(Number(x.lu) * 1000) : Date.parse(x.lu ?? x.last_updated ?? x.last_changed), Number(x.s ?? x.state) * f * (k === "soc" ? 1 : sign)])
+      const { id, sign } = cfg[k], f = pwFactor(k, hass, id), sg = PW[k].kind === "power" ? sign : 1;
+      out[k] = (res?.[id] || []).map(x => [isNum(x.lu) ? Math.round(Number(x.lu) * 1000) : Date.parse(x.lu ?? x.last_updated ?? x.last_changed), Number(x.s ?? x.state) * f * sg])
         .filter(x => isNum(x[0]) && isNum(x[1])).sort((a, b) => a[0] - b[0]);
     }
     return out;
@@ -630,8 +639,31 @@ async function pwLoad(hass, cfg, start, end) {
   pwCache.set(ck, { t: Date.now(), p });
   return p;
 }
+// long ranges: HA hourly statistics (energy = mean power × 1 h, extremes = real recorded min / max)
+async function pwHourly(hass, cfg, start, end) {
+  const keys = Object.keys(cfg);
+  if (!keys.length || !hass?.callWS) return {};
+  const ck = "hour|" + keys.map(k => cfg[k].id + cfg[k].sign).join(",") + "|" + +start + "|" + +end;
+  const hit = pwCache.get(ck);
+  if (hit && Date.now() - hit.t < 300000) return hit.p;
+  const p = hass.callWS({
+    type: "recorder/statistics_during_period", start_time: new Date(start).toISOString(), end_time: new Date(Math.min(+end, Date.now())).toISOString(),
+    statistic_ids: keys.map(k => cfg[k].id), period: "hour", types: ["mean", "min", "max"],
+  }).then(res => {
+    const out = {};
+    for (const k of keys) {
+      const { id, sign } = cfg[k], f = pwFactor(k, hass, id), sg = PW[k].kind === "power" ? sign : 1;
+      out[k] = (res?.[id] || []).map(x => {
+        const t = typeof x.start === "number" ? x.start : Date.parse(x.start), a = Number(x.min) * f * sg, b = Number(x.max) * f * sg;
+        return { t, mean: Number(x.mean) * f * sg, min: Math.min(a, b), max: Math.max(a, b) };
+      }).filter(x => isNum(x.t) && isNum(x.mean));
+    }
+    return out;
+  }).catch(e => { console.warn("PGE Net-Billing: statistics unavailable", e); pwCache.delete(ck); return { error: e?.message || String(e) }; });
+  pwCache.set(ck, { t: Date.now(), p });
+  return p;
+}
 const pwAt = (s, t) => { if (!s?.length || t < s[0][0]) return null; let lo = 0, hi = s.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (s[m][0] <= t) lo = m; else hi = m - 1; } return s[lo][1]; };
-// energy from real readings: each state holds until the next one (kWh = kW × h); + and − parts separately
 function pwEnergy(s, a, b) {
   let pos = 0, neg = 0;
   if (!s?.length) return { pos: null, neg: null };
@@ -643,79 +675,191 @@ function pwEnergy(s, a, b) {
   }
   return { pos, neg };
 }
-function pwStats(data, a, b) {
-  const now = Math.min(b, Date.now()), out = {};
-  for (const k in data) {
-    const s = data[k]; if (!Array.isArray(s) || !s.length) continue;
-    const vis = s.filter(x => x[0] >= a && x[0] < now), vals = vis.map(x => x[1]);
-    const before = pwAt(s, a); if (isNum(before)) vals.push(before);
-    out[k] = { ...pwEnergy(s, a, now), max: vals.length ? Math.max(...vals) : null, min: vals.length ? Math.min(...vals) : null, now: pwAt(s, now), n: vis.length };
+async function pwFetch(hass, cfg, r, mul) {
+  const a = +r.start, b = +r.end, end = Math.min(b, Date.now()), long = b - a > 8 * 864e5;
+  const pick = ks => Object.fromEntries(ks.filter(k => cfg[k]).map(k => [k, cfg[k]]));
+  const pk = pick(["pv", "bat", "grid", "load", "soc"]), ck = pick(["imp", "exp"]);
+  const q = `start=${isoDate(r.start)}&end=${isoDate(addDays(r.end, -1))}&agg=raw`;
+  const [raw, cnt, st, rce] = await Promise.all([
+    long ? {} : pwLoad(hass, pk, a, b),
+    pwLoad(hass, ck, a, b),
+    long ? pwHourly(hass, pk, a, b) : {},
+    hass.callApi ? hass.callApi("GET", `pge_net_billing/rce?${q}`).catch(() => ({ rows: [] })) : { rows: [] },
+  ]);
+  for (const x of [raw, cnt, st]) if (x?.error) return { error: x.error };
+  const rmap = new Map((rce?.rows || []).map(x => [Date.parse(x[0]), Number(x[1]) * mul]));
+  return { long, raw, cnt, st, rmap, a, b, end };
+}
+// 15-min slots from the inverter counters: what was really bought / sold and at which price
+function pwSlots(D, tz) {
+  const out = [], ci = D.cnt.imp, ce = D.cnt.exp;
+  for (let t = D.a; t < D.b; t += 9e5) {
+    const z = g12Zone(new Date(t)), t1 = Math.min(t + 9e5, D.end), past = t < D.end;
+    const d = s => { if (!past || !s?.length) return null; const x0 = pwAt(s, t), x1 = pwAt(s, t1); return isNum(x0) && isNum(x1) ? Math.max(0, x1 - x0) : null; };
+    out.push({ t, buy: isNum(tz[z]) ? Number(tz[z]) : null, sell: D.rmap.has(t) ? Math.max(0, D.rmap.get(t)) : null, rceRaw: D.rmap.get(t), z, di: d(ci), de: d(ce), past });
   }
   return out;
 }
-function pwSvg(data, a, b, off) {
-  const W = 1000, H = 380, L = 50, R = 44, T = 16, B = 34, now = Date.now();
-  const X = t => L + (t - a) / (b - a) * (W - L - R);
-  const kw = []; for (const k of ["pv", "bat", "grid", "load"]) if (!off[k]) for (const x of data[k] || []) if (x[0] >= a && x[0] < b) kw.push(x[1]);
-  let lo = Math.min(0, ...kw), hi = Math.max(1, ...kw);
-  const st = niceStep(hi - lo, 6); lo = Math.floor(lo / st) * st; hi = Math.ceil(hi / st) * st;
-  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B), YS = p => T + (100 - p) / 100 * (H - T - B);
-  let g = "";
-  for (let t = a; t < b; t += 36e5) if (g12Zone(new Date(t)) === "s2") g += `<rect x="${X(t)}" y="${T}" width="${X(t + 36e5) - X(t)}" height="${H - T - B}" class="pw-night"/>`;
-  for (let v = lo; v <= hi + st / 1e6; v += st) g += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="${Math.abs(v) < st / 1e6 ? "zero" : "grid"}"/><text x="${L - 7}" y="${Y(v) + 4}" text-anchor="end" class="ax">${String(+v.toFixed(2)).replace(".", ",")}</text>`;
-  if (data.soc?.length && !off.soc) for (let p = 0; p <= 100; p += 20) g += `<text x="${W - R + 6}" y="${YS(p) + 4}" class="ax">${p}%</text>`;
-  for (let h = 0; h <= 24; h += 2) { const t = +new Date(new Date(a).setHours(h, 0, 0, 0)); if (t >= a && t <= b) g += `<text x="${X(t)}" y="${H - 12}" text-anchor="middle" class="xl">${pad(h % 24)}:00</text>`; }
-  const end = Math.min(b, now);
-  const path = (s, y) => { let d = "", prev = null; for (const [t, v] of s) { if (t >= end) break; const x = X(Math.max(a, t)); d += prev === null ? `M${x} ${y(v)}` : `H${x}V${y(v)}`; prev = v; } return d && prev !== null ? d + `H${X(end)}` : ""; };
-  const clip = s => { const v0 = pwAt(s, a); return (isNum(v0) ? [[a, v0]] : []).concat(s.filter(x => x[0] > a)); };
-  for (const k of PW_ORDER) {
-    const s = data[k]; if (!s?.length || off[k]) continue;
-    const c = clip(s), y = k === "soc" ? YS : Y, d = path(c, y); if (!d) continue;
-    const x0 = X(Math.max(a, c[0][0])), base = k === "soc" ? YS(0) : Y(0);
-    if (k === "soc" || k === "bat" || k === "grid") g += `<path d="${d}V${base}H${x0}Z" fill="${PW[k].color}" opacity="${k === "soc" ? .12 : .16}"/>`;
-    g += `<path d="${d}" fill="none" stroke="${PW[k].color}" stroke-width="${k === "soc" ? 2 : 1.7}" stroke-linejoin="round"/>`;
+function pwAgg(D, slots, a, b, tz) {
+  const end = Math.min(b, D.end), r = { pv: null, ch: null, dis: null, load: null, pvMax: null, chMax: null, disMax: null, ldMax: null, sMin: null, sMax: null, tMin: null, tMax: null, imp: null, exp: null, cost: null, val: null, best: null };
+  const add = (k, v) => { if (isNum(v)) r[k] = (r[k] || 0) + v; };
+  const mx = (k, v, t, tk) => { if (isNum(v) && (r[k] === null || v > r[k])) { r[k] = v; if (tk) r[tk] = t; } };
+  const mn = (k, v, t, tk) => { if (isNum(v) && (r[k] === null || v < r[k])) { r[k] = v; if (tk) r[tk] = t; } };
+  if (!D.long) {
+    const R = D.raw;
+    const e = k => R[k]?.length ? pwEnergy(R[k], a, end) : { pos: null, neg: null };
+    r.pv = e("pv").pos; const eb = e("bat"); r.ch = eb.pos; r.dis = eb.neg; r.load = e("load").pos;
+    const scan = (k, f) => { const s = R[k]; if (!s?.length) return; const v0 = pwAt(s, a); if (isNum(v0)) f(v0, a); for (const x of s) if (x[0] >= a && x[0] < end) f(x[1], x[0]); };
+    scan("pv", v => mx("pvMax", v)); scan("bat", v => { mx("chMax", v); mx("disMax", -v); }); scan("load", v => mx("ldMax", v));
+    scan("soc", (v, t) => { mn("sMin", v, t, "tMin"); mx("sMax", v, t, "tMax"); });
+  } else {
+    const S = D.st;
+    for (const x of S.pv || []) if (x.t >= a && x.t < end) { add("pv", Math.max(0, x.mean)); mx("pvMax", x.max); }
+    for (const x of S.bat || []) if (x.t >= a && x.t < end) { if (x.mean > 0) add("ch", x.mean); else add("dis", -x.mean); mx("chMax", x.max); mx("disMax", -x.min); }
+    for (const x of S.load || []) if (x.t >= a && x.t < end) { add("load", Math.max(0, x.mean)); mx("ldMax", x.max); }
+    for (const x of S.soc || []) if (x.t >= a && x.t < end) { mn("sMin", x.min, x.t, "tMin"); mx("sMax", x.max, x.t, "tMax"); }
+    if (r.ch === null && S.bat?.length) r.ch = 0; if (r.dis === null && S.bat?.length) r.dis = 0;
   }
-  if (now > a && now < b) g += `<line x1="${X(now)}" x2="${X(now)}" y1="${T}" y2="${H - B}" class="nowl"/><text x="${X(now) + 5}" y="${T + 12}" class="nowt">teraz</text>`;
-  return `<svg class="pw-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"><text x="4" y="12" class="unit">kW</text>${g}<line class="pw-hl" y1="${T}" y2="${H - B}" style="display:none"/><rect class="pw-ov" x="${L}" y="${T}" width="${X(end) - L}" height="${H - T - B}" fill="transparent" data-a="${a}" data-b="${b}" data-l="${L}" data-r="${R}" data-w="${W}"/></svg>`;
+  for (const s of slots) {
+    if (s.t < a || s.t >= b || !s.past) continue;
+    if (isNum(s.di)) { add("imp", s.di); if (isNum(s.buy)) add("cost", s.di * s.buy); }
+    if (isNum(s.de)) { add("exp", s.de); if (isNum(s.sell)) add("val", s.de * s.sell); if (s.de > 0.001 && isNum(s.sell) && (!r.best || s.sell > r.best.sell)) r.best = { sell: s.sell, t: s.t, kwh: s.de }; }
+  }
+  r.buy = isNum(r.cost) && r.imp > 0 ? r.cost / r.imp : null;
+  r.sell = isNum(r.val) && r.exp > 0 ? r.val / r.exp : null;
+  return r;
 }
-function pwCard(st, cfg, m) {
-  const keys = Object.keys(cfg);
-  if (!keys.length) return `<section class="box pw"><div class="pw-head"><h3>Moc i bateria</h3></div><div class="nohist">Wskaż encje mocy (PV, bateria, SOC, konsumpcja, sieć) w Ustawienia → Urządzenia i usługi → PGE Net-Billing → Konfiguruj. Brakujące encje są po prostu pomijane.</div></section>`;
-  const a = +st.day, b = +addDays(st.day, 1), d = st.data, today = isoDate(st.day) === isoDate(new Date());
-  const S = d && !d.error ? pwStats(d, a, b) : {}, tz = m.tariff?.price_gross || {}, zNow = g12Zone(new Date());
-  const tile = (k, val, sub, cls = "") => cfg[k] ? `<div class="pw-tile hist" data-hist="pw_${k}" tabindex="0" role="button" title="Kliknij: historia"><small><i style="background:${PW[k].color}"></i>${val[0]}</small><b style="color:${PW[k].color}">${val[1]}</b><em>${sub}</em></div>` : "";
-  const kw = v => isNum(v) ? NF.format(v) + " kW" : "—", pct = v => isNum(v) ? Math.round(v) + "%" : "—";
-  const tiles = [
-    tile("pv", ["Produkcja PV", kwh(S.pv?.pos)], `szczyt ${kw(S.pv?.max)}`),
-    tile("bat", ["Ładowanie baterii", kwh(S.bat?.pos)], `rozład. ${kwh(S.bat?.neg)}`),
-    tile("grid", ["Pobór z sieci", kwh(S.grid?.pos)], `oddano ${kwh(S.grid?.neg)}`),
-    tile("load", ["Konsumpcja domu", kwh(S.load?.pos)], today ? `teraz ${kw(S.load?.now)}` : `szczyt ${kw(S.load?.max)}`),
-    tile("soc", ["SOC baterii", today ? pct(S.soc?.now) : pct(S.soc?.max)], `min ${pct(S.soc?.min)} · maks ${pct(S.soc?.max)}`),
+function pwBuckets(r) {
+  const out = [];
+  if (r.mode === "year") for (let m = 0; m < 12; m++) { const a = new Date(r.start.getFullYear(), m, 1); out.push({ a: +a, b: +new Date(a.getFullYear(), m + 1, 1), lab: MONTH_SHORT[m], tip: monthName(a), d: a }); }
+  else for (let d = new Date(r.start); d < r.end; d = addDays(d, 1)) out.push({ a: +d, b: +addDays(d, 1), lab: pad(d.getDate()), tip: `${d.getDate()} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`, d });
+  return out;
+}
+function pwModel(st, D, m) {
+  const r = st.range, tz = m.tariff?.price_gross || {};
+  if (!D || D.error) return { r, D };
+  const slots = pwSlots(D, tz), tot = pwAgg(D, slots, D.a, D.b, tz);
+  const buckets = D.long ? pwBuckets(r).map(x => ({ ...x, live: x.a < D.end, v: x.a < D.end ? pwAgg(D, slots, x.a, x.b, tz) : null })) : null;
+  return { r, D, slots, tot, buckets };
+}
+const pwSmooth = pts => { if (!pts.length) return ""; let s = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`; for (let i = 1; i < pts.length; i++) { const [a, b] = pts[i - 1], [c, e] = pts[i], mm = (a + c) / 2; s += `C${mm.toFixed(1)} ${b.toFixed(1)},${mm.toFixed(1)} ${e.toFixed(1)},${c.toFixed(1)} ${e.toFixed(1)}`; } return s; };
+const pwPriceTop = vals => Math.max(3, Math.ceil(Math.max(0, ...vals.filter(isNum)) * 2) / 2);
+// many raw points per pixel (week): keep first / min / max / last of each pixel – no averaging, peaks stay
+function pwThin(s, X) {
+  if (s.length < 2500) return s;
+  const out = []; let px = null, g = [];
+  const flush = () => { if (!g.length) return; let lo = g[0], hi = g[0]; for (const p of g) { if (p[1] < lo[1]) lo = p; if (p[1] > hi[1]) hi = p; } const set = [g[0], lo, hi, g[g.length - 1]].sort((x, y) => x[0] - y[0]); for (const p of set) if (out[out.length - 1] !== p) out.push(p); };
+  for (const p of s) { const q = Math.floor(X(p[0])); if (q !== px) { flush(); g = []; px = q; } g.push(p); }
+  flush(); return out;
+}
+function pwSvg(M, off) {
+  const W = 1000, H = 400, L = 50, R = 60, T = 16, B = 34, now = Date.now(), { D, r } = M, a = D.a, b = D.b, end = D.end;
+  const X = t => L + (t - a) / (b - a) * (W - L - R);
+  const defs = `<defs><filter id="pwgl" x="-5%" y="-50%" width="110%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`;
+  let g = "", kw = [], unit = "kW";
+  const prices = M.slots.flatMap(s => [off.buy ? null : s.buy, off.sell ? null : s.sell]);
+  if (D.long) { unit = "kWh"; for (const x of M.buckets) if (x.v) { const v = x.v; if (!off.pv) kw.push(v.pv); if (!off.load) kw.push(v.load); if (!off.bat) kw.push(v.ch, -(v.dis || 0)); if (!off.grid) kw.push(v.imp, -(v.exp || 0)); } }
+  else for (const k of PW_LINES) if (!off[k]) for (const x of D.raw[k] || []) if (x[0] >= a && x[0] < b) kw.push(x[1]);
+  kw = kw.filter(isNum);
+  let lo = Math.min(0, ...kw), hi = Math.max(1, ...kw); const st = niceStep(hi - lo, 6); lo = Math.floor(lo / st) * st; hi = Math.ceil(hi / st) * st;
+  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B), YS = p => T + (100 - p) / 100 * (H - T - B), pTop = pwPriceTop(D.long ? M.buckets.flatMap(x => [x.v?.buy, x.v?.sell]) : prices), YP = v => T + (pTop - v) / pTop * (H - T - B);
+  if (!D.long) for (let t = a; t < b; t += 36e5) if (g12Zone(new Date(t)) === "s2") g += `<rect x="${X(t)}" y="${T}" width="${X(t + 36e5) - X(t)}" height="${H - T - B}" class="pw-night"/>`;
+  for (let v = lo; v <= hi + st / 1e6; v += st) g += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="${Math.abs(v) < st / 1e6 ? "zero" : "grid"}"/><text x="${L - 7}" y="${Y(v) + 4}" text-anchor="end" class="ax">${String(+v.toFixed(2)).replace(".", ",")}</text>`;
+  const pst = pTop > 4 ? 1 : 0.5; for (let v = 0; v <= pTop + 1e-9; v += pst) g += `<text x="${W - R + 6}" y="${YP(v) + 4}" class="ax pw-pax">${NF.format(v)}</text>`;
+  g += `<text x="4" y="12" class="unit">${unit}</text><text x="${W - R + 4}" y="12" class="unit pw-pax">zł/kWh</text>`;
+  // x labels
+  if (D.long) { const bk = M.buckets, ev = bk.length > 16 ? 2 : 1; bk.forEach((x, i) => { if (i % ev === 0) g += `<text x="${X((x.a + x.b) / 2)}" y="${H - 12}" text-anchor="middle" class="xl">${x.lab}</text>`; }); }
+  else if (b - a > 1.5 * 864e5) for (let d = new Date(a); +d < b; d = addDays(d, 1)) g += `<line x1="${X(+d)}" x2="${X(+d)}" y1="${T}" y2="${H - B}" class="vgrid"/><text x="${X(+d + 432e5)}" y="${H - 12}" text-anchor="middle" class="xl">${["nd", "pon", "wt", "śr", "czw", "pt", "sob"][d.getDay()]} ${pad(d.getDate())}.${pad(d.getMonth() + 1)}</text>`;
+  else for (let h = 0; h <= 24; h += 2) { const t = +new Date(new Date(a).setHours(h, 0, 0, 0)); if (t >= a && t <= b) g += `<text x="${X(t)}" y="${H - 12}" text-anchor="middle" class="xl">${pad(h % 24)}:00</text>`; }
+  if (!D.long) {
+    const path = (s, y) => { let d = "", prev = null; for (const [t, v] of s) { if (t >= end) break; const x = X(Math.max(a, t)); d += prev === null ? `M${x.toFixed(1)} ${y(v).toFixed(1)}` : `H${x.toFixed(1)}V${y(v).toFixed(1)}`; prev = v; } return d && prev !== null ? d + `H${X(end).toFixed(1)}` : ""; };
+    const clip = s => { const v0 = pwAt(s, a); return pwThin((isNum(v0) ? [[a, v0]] : []).concat(s.filter(x => x[0] > a && x[0] < end)), X); };
+    const wk = b - a > 1.5 * 864e5;
+    for (const k of PW_LINES) {
+      const s = D.raw[k]; if (!s?.length || off[k]) continue;
+      const c = clip(s), d = path(c, Y); if (!d) continue;
+      if (k === "bat" || k === "grid") g += `<path d="${d}V${Y(0)}H${X(Math.max(a, c[0][0]))}Z" fill="${PW[k].color}" opacity=".14"/>`;
+      g += `<path d="${d}" fill="none" stroke="${PW[k].color}" stroke-width="${wk ? 1 : 1.5}" stroke-linejoin="round" opacity=".9"/>`;
+    }
+    // neon price steps: thin = price in force, thick glow = really bought / sold in that quarter
+    const step = (k, act, c) => { let d = "", h = ""; for (const s of M.slots) { const v = s[k]; if (!isNum(v)) continue; const x0 = X(s.t), x1 = X(s.t + 9e5), y = YP(v).toFixed(1); d += `M${x0.toFixed(1)} ${y}H${x1.toFixed(1)}`; if (act(s)) h += `M${x0.toFixed(1)} ${y}H${x1.toFixed(1)}`; } return (d ? `<path d="${d}" fill="none" stroke="${c}" stroke-width="1.6" opacity=".55"/>` : "") + (h ? `<path d="${h}" fill="none" stroke="${c}" stroke-width="${wk ? 3 : 4}" stroke-linecap="round" filter="url(#pwgl)"/>` : ""); };
+    if (!off.buy) g += step("buy", s => s.di > 0.001, PINK);
+    if (!off.sell) g += step("sell", s => s.de > 0.001, CYAN);
+    // SOC on top: light fill + thick line
+    const so = D.raw.soc; if (so?.length && !off.soc) { const c = clip(so), d = path(c, YS); if (d) g += `<path d="${d}V${YS(0)}H${X(Math.max(a, c[0][0]))}Z" fill="${TONE.blue}" opacity=".08"/><path d="${d}" fill="none" stroke="${TONE.blue}" stroke-width="3" stroke-linejoin="round"/>`; }
+    if (now > a && now < b) g += `<line x1="${X(now)}" x2="${X(now)}" y1="${T}" y2="${H - B}" class="nowl"/><text x="${X(now) + 5}" y="${T + 12}" class="nowt">teraz</text>`;
+  } else {
+    const live = M.buckets.filter(x => x.v), cx = x => X((x.a + x.b) / 2);
+    const line = (f, c, w = 2) => { const p = live.filter(x => isNum(f(x.v))).map(x => [cx(x), f(x.v)]); return p.length ? `<path d="${pwSmooth(p.map(q => [q[0], Y(q[1])]))}" fill="none" stroke="${c}" stroke-width="${w}"/>` : ""; };
+    const area = (f, c, op) => { const p = live.filter(x => isNum(f(x.v))).map(x => [cx(x), Y(f(x.v))]); if (!p.length) return ""; const d = pwSmooth(p); return `<path d="${d}L${p[p.length - 1][0].toFixed(1)} ${Y(0)}L${p[0][0].toFixed(1)} ${Y(0)}Z" fill="${c}" opacity="${op}"/><path d="${d}" fill="none" stroke="${c}" stroke-width="1.8"/>`; };
+    if (!off.bat) g += area(v => v.ch, PW.bat.color, .14) + area(v => isNum(v.dis) ? -v.dis : null, PW.bat.color, .09);
+    if (!off.grid) g += area(v => v.imp, PW.grid.color, .14) + area(v => isNum(v.exp) ? -v.exp : null, PW.grid.color, .09);
+    if (!off.pv) g += line(v => v.pv, PW.pv.color); if (!off.load) g += line(v => v.load, PW.load.color);
+    for (const [k, c] of [["buy", PINK], ["sell", CYAN]]) if (!off[k]) { const p = live.filter(x => isNum(x.v[k])).map(x => [cx(x), YP(x.v[k])]); if (p.length) g += `<path d="${pwSmooth(p)}" fill="none" stroke="${c}" stroke-width="3" filter="url(#pwgl)"/>` + p.map(q => `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="3.5" fill="${c}" filter="url(#pwgl)"/>`).join(""); }
+    if (!off.soc) { const p = live.filter(x => isNum(x.v.sMax) && isNum(x.v.sMin)); if (p.length) { const top = p.map(x => [cx(x), YS(x.v.sMax)]), bot = p.map(x => [cx(x), YS(x.v.sMin)]).reverse(); g += `<path d="${pwSmooth(top)}L${bot.map(q => q[0].toFixed(1) + " " + q[1].toFixed(1)).join("L")}Z" fill="${TONE.blue}" opacity=".09"/><path d="${pwSmooth(bot.slice().reverse())}" fill="none" stroke="${TONE.blue}" stroke-width="1.2" opacity=".6"/><path d="${pwSmooth(top)}" fill="none" stroke="${TONE.blue}" stroke-width="3"/>`; } }
+    if (now > a && now < b) g += `<line x1="${X(now)}" x2="${X(now)}" y1="${T}" y2="${H - B}" class="nowl"/><text x="${X(now) + 5}" y="${T + 12}" class="nowt">teraz</text>`;
+  }
+  if (!off.soc && (D.raw.soc?.length || D.st?.soc?.length)) for (let p = 0; p <= 100; p += 25) g += `<text x="${L + 4}" y="${YS(p) - 3}" class="ax pw-sax">${p}%</text>`;
+  return `<svg class="pw-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${defs}${g}<line class="pw-hl" y1="${T}" y2="${H - B}" style="display:none"/><g class="pw-dots"></g><rect class="pw-ov" x="${L}" y="${T}" width="${Math.max(0, X(end) - L)}" height="${H - T - B}" fill="transparent" data-a="${a}" data-b="${b}" data-l="${L}" data-r="${R}" data-w="${W}"/></svg>`;
+}
+function pwTitle(r) {
+  const t = new Date(), d0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  if (r.mode === "day") return isoDate(r.start) === isoDate(d0) ? "dziś" : isoDate(r.start) === isoDate(addDays(d0, -1)) ? "wczoraj" : plDate(r.start);
+  return rangeLabel(r);
+}
+function pwCard(st, cfg, m, M, hass) {
+  const liveVal = k => { const x = hass?.states?.[cfg[k]?.id]; return x && isNum(x.state) ? Number(x.state) * pwFactor(k, hass, cfg[k].id) * (PW[k].kind === "power" ? cfg[k].sign : 1) : null; };
+  if (!Object.keys(cfg).length) return `<section class="box pw"><div class="pw-head"><h3>Moc i bateria</h3></div><div class="nohist">Wskaż encje (moc PV, baterii, konsumpcji, sieci, SOC oraz liczniki falownika poboru i oddania) w Ustawienia → Urządzenia i usługi → PGE Net-Billing → Konfiguruj. Brakujące encje są po prostu pomijane.</div></section>`;
+  const r = st.range, t0 = new Date(), today = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate()), isDay = r.mode === "day";
+  const on = k => (k === "today" && isDay && isoDate(r.start) === isoDate(today)) || (k === "yday" && isDay && isoDate(r.start) === isoDate(addDays(today, -1))) || k === r.mode;
+  const D = M?.D, T = M?.tot || {}, live = r.end > Date.now(), nowSoc = cfg.soc ? liveVal("soc") : null;
+  const kw = v => isNum(v) ? NF.format(v) + " kW" : "—", pct = v => isNum(v) ? Math.round(v) + "%" : "—", price = v => isNum(v) ? NF4.format(v) + " zł/kWh" : "—";
+  const at = t => !isNum(t) ? "" : isDay ? `${pad(new Date(t).getHours())}:${pad(new Date(t).getMinutes())}` : r.mode === "year" || r.mode === "month" ? `${dayShort(new Date(t))} ${pad(new Date(t).getHours())}:00` : `${dayShort(new Date(t))} ${pad(new Date(t).getHours())}:${pad(new Date(t).getMinutes())}`;
+  const tile = (key, hist, color, label, val, sub, vc) => `<div class="pw-tile hist" data-hist="${hist}" tabindex="0" role="button" title="Kliknij: historia"><small><i style="background:${color}"></i>${label}</small><b style="color:${vc || color}">${val}</b><em>${sub}</em></div>`;
+  const miss = "brak encji – ustaw w opcjach";
+  const e1 = [
+    tile("pv", "pw_pv", PW.pv.color, "Produkcja PV", cfg.pv ? kwh(T.pv) : "—", cfg.pv ? `szczyt ${kw(T.pvMax)}` : miss),
+    tile("ch", "pw_bat", PW.bat.color, "Ładowanie baterii", cfg.bat ? kwh(T.ch) : "—", cfg.bat ? `maks. moc ${kw(T.chMax)}` : miss),
+    tile("dis", "pw_bat", PW.bat.color, "Rozładowanie baterii", cfg.bat ? kwh(T.dis) : "—", cfg.bat ? `maks. moc ${kw(T.disMax)}` : miss, "#b7aaff"),
+    tile("soc", "pw_soc", TONE.blue, "SOC magazynu min / maks", cfg.soc ? `${pct(T.sMin)} <span class="pw-arr">→</span> ${pct(T.sMax)}` : "—", cfg.soc ? `${isNum(T.tMin) ? "min " + at(T.tMin) + " · maks " + at(T.tMax) : ""}${live && isNum(nowSoc) ? " · teraz " + pct(nowSoc) : ""}` : miss),
+    tile("imp", cfg.grid ? "pw_grid" : "cost", PW.grid.color, "Import z sieci", cfg.imp ? kwh(T.imp) : "—", cfg.imp ? "licznik falownika" : miss),
+    tile("exp", cfg.grid ? "pw_grid" : "sell", PW.grid.color, "Eksport do sieci", cfg.exp ? kwh(T.exp) : "—", cfg.exp ? "licznik falownika" : miss, "#ffd27a"),
+    tile("load", "pw_load", PW.load.color, "Pobór domu", cfg.load ? kwh(T.load) : "—", cfg.load ? `szczyt ${kw(T.ldMax)}${live && isDay ? " · teraz " + kw(liveVal("load")) : ""}` : miss),
   ].join("");
-  const body = !d ? `<div class="nohist big">Ładowanie…</div>` : d.error ? `<div class="nohist big">Nie udało się pobrać historii: ${esc(d.error)}</div>` : Object.values(d).some(s => s?.length) ? pwSvg(d, a, b, st.off) : `<div class="nohist big">Brak zapisanych odczytów w tym dniu</div>`;
+  const b = T.best;
+  const e2 = [
+    tile("buy", "tariff", PINK, "Śr. cena kupna", cfg.imp ? price(T.buy) : "—", cfg.imp ? `z ${kwh(T.imp)} importu` : miss),
+    tile("sell", "rce", CYAN, "Śr. cena sprzedaży", cfg.exp ? price(T.sell) : "—", cfg.exp ? `z ${kwh(T.exp)} eksportu` : miss),
+    tile("best", "rce", CYAN, "Najwyższa cena sprzedaży", cfg.exp ? (b ? price(b.sell) : "—") : "—", cfg.exp ? (b ? `${isDay ? "" : dayShort(new Date(b.t)) + " "}${pad(new Date(b.t).getHours())}:${pad(new Date(b.t).getMinutes())}–${pad(new Date(b.t + 9e5).getHours())}:${pad(new Date(b.t + 9e5).getMinutes())} · sprzedano ${kwh(b.kwh)}` : "brak sprzedaży w okresie") : miss),
+    tile("cost", "cost", TONE.red, "Zapłacono za zakup", cfg.imp ? zl(T.cost) : "—", cfg.imp ? "energia brutto (G12)" : miss),
+    tile("val", "sell", TONE.green, "Wartość sprzedaży", cfg.exp ? zl(T.val) : "—", cfg.exp ? "RCE brutto – trafia do depozytu" : miss),
+  ].join("");
+  const body = !D ? `<div class="nohist big">Ładowanie…</div>` : D.error ? `<div class="nohist big">Nie udało się pobrać historii: ${esc(D.error)}</div>` : pwSvg(M, st.off);
   return `<section class="box pw">
-  <div class="pw-head"><h3>Moc i bateria <span>(${today ? "dziś" : esc(plDate(st.day))})</span></h3>${today && cfg.soc ? `<div class="muted">teraz · SOC <b class="t-blue">${pct(S.soc?.now)}</b></div>` : ""}</div>
-  <div class="fc-ctrl"><button class="fc-btn fc-arrow" data-pw="-1" aria-label="Poprzedni dzień"><ha-icon icon="mdi:chevron-left"></ha-icon></button><span class="fc-btn pw-day">${plDate(st.day)}</span><button class="fc-btn fc-arrow" data-pw="1" ${today ? "disabled" : ""} aria-label="Następny dzień"><ha-icon icon="mdi:chevron-right"></ha-icon></button><span class="fc-sep"></span><button class="fc-btn" data-pwd="-1">Wczoraj</button><button class="fc-btn${today ? " on fc-mode" : ""}" data-pwd="0">Dzisiaj</button></div>
-  <div class="pw-legend">${PW_ORDER.filter(k => cfg[k]).map(k => `<button class="pw-lg${st.off[k] ? " off" : ""}" data-lg="${k}"><i style="background:${PW[k].color}"></i>${PW[k].label}</button>`).join("")}</div>
+  <div class="pw-head"><h3>Moc i bateria <span>(${esc(pwTitle(r))})</span></h3>${cfg.soc && isNum(nowSoc) ? `<div class="muted">teraz · SOC <b class="t-blue">${pct(nowSoc)}</b></div>` : ""}</div>
+  <div class="fc-ctrl"><button class="fc-btn fc-arrow" data-pw="-1" aria-label="Wcześniej"><ha-icon icon="mdi:chevron-left"></ha-icon></button><button class="fc-btn fc-arrow" data-pw="1" ${r.end > Date.now() ? "disabled" : ""} aria-label="Później"><ha-icon icon="mdi:chevron-right"></ha-icon></button><span class="fc-sep"></span>
+    <button class="fc-btn fc-mode${on("today") ? " on" : ""}" data-pwm="today">Dzisiaj</button><button class="fc-btn fc-mode${on("yday") ? " on" : ""}" data-pwm="yday">Wczoraj</button><span class="fc-sep"></span>
+    ${PW_MODES.map(([k, l]) => `<button class="fc-btn fc-mode${on(k) ? " on" : ""}" data-pwm="${k}">${l}</button>`).join("")}</div>
+  <div class="pw-legend">${PW_LEGEND.filter(([k]) => k === "buy" || k === "sell" ? true : k === "grid" ? cfg.grid || cfg.imp || cfg.exp : cfg[k]).map(([k, l, c]) => `<button class="pw-lg${st.off[k] ? " off" : ""}" data-lg="${k}"><i style="background:${c}"></i>${l}</button>`).join("")}</div>
   <div class="pw-plot">${body}<div class="fc-tip pw-tip" hidden></div></div>
-  <div class="pw-prices">Cena zakupu (G12): <b data-pp="buy">${isNum(tz[zNow]) ? NF4.format(tz[zNow]) + " zł/kWh" : "—"}</b> · Cena RCE brutto: <b data-pp="rce">${isNum(m.rce) ? NF4.format(m.rce) + " zł/kWh" : "—"}</b> · <span data-pp="zone">${zNow === "s2" ? "strefa nocna" : "strefa dzienna"}</span><span data-pp="at"></span></div>
-  <div class="pw-tiles">${tiles}</div>
-  <div class="pw-note">Surowe odczyty z historii Home Assistant (bez uśredniania). Energia w kaflach = moc × czas między kolejnymi odczytami. Dodatnie = ładowanie baterii / pobór z sieci, ujemne = rozładowanie / oddanie.</div>
+  <div class="pw-sec">Energia</div><div class="pw-tiles">${e1}</div>
+  <div class="pw-sec">Pieniądze</div><div class="pw-tiles">${e2}</div>
+  <div class="pw-note">${D?.long ? "Punkt = suma energii w " + (r.mode === "year" ? "miesiącu" : "dniu") + " (moc z godzinowych statystyk HA × 1 h; SOC = najniższy i najwyższy odczyt). " : "Surowe odczyty z historii HA (bez uśredniania; przy wielu odczytach na piksel rysowany jest najniższy i najwyższy). "}Kupno / sprzedaż = przyrost liczników falownika w każdym kwadransie × cena G12 brutto / RCE brutto z tego kwadransu. Gruba neonowa linia = wtedy faktycznie kupowałeś (róż) albo sprzedawałeś (turkus). Ceny G12 wg obecnych stawek z konfiguracji.</div>
 </section>`;
 }
 const PW_CSS = `
 .pw{margin-top:13px;padding:16px 16px 12px}.pw-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.pw-head h3{margin:0;font-size:18px}.pw-head h3 span{color:var(--mut);font-weight:400}
-.pw .fc-ctrl{margin:12px 0 4px}.pw-day{cursor:default}
-.pw-legend{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px}.pw-lg{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:13px;color:var(--mut2);padding:4px 10px;border:1px solid #1d3a55;border-radius:20px;background:transparent;cursor:pointer}.pw-lg.off{opacity:.35}.pw-lg i{width:9px;height:9px;border-radius:50%}
-.pw-plot{position:relative;min-height:240px}.pw-svg{width:100%;height:auto;display:block}.pw-svg .grid{stroke:#1a3246}.pw-svg .zero{stroke:#3b5a73;stroke-width:1.2}.pw-svg .ax,.pw-svg .xl,.pw-svg .unit{fill:var(--mut);font-size:13px}
+.pw .fc-ctrl{margin:12px 0 4px}
+.pw-legend{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px}.pw-lg{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:13px;color:var(--mut2);padding:4px 10px;border:1px solid #1d3a55;border-radius:20px;background:transparent;cursor:pointer}.pw-lg.off{opacity:.35}.pw-lg i{width:14px;height:4px;border-radius:2px}
+.pw-plot{position:relative;min-height:260px}.pw-svg{width:100%;height:auto;display:block}.pw-svg .grid{stroke:#1a3246}.pw-svg .vgrid{stroke:#14293a}.pw-svg .zero{stroke:#3b5a73;stroke-width:1.2}.pw-svg .ax,.pw-svg .xl,.pw-svg .unit{fill:var(--mut);font-size:13px}.pw-svg .pw-pax{fill:${CYAN};opacity:.85}.pw-svg .pw-sax{fill:${TONE.blue};opacity:.55;font-size:11px}
 .pw-night{fill:#3b8cff;opacity:.05}.pw-svg .nowl{stroke:#c9d7e2;stroke-dasharray:3 3;opacity:.6}.pw-svg .nowt{fill:#c9d7e2;font-size:12px}.pw-hl{stroke:#c9d7e2;opacity:.5}.pw-ov{cursor:crosshair}
-.pw-tip .r{display:flex;justify-content:space-between;gap:16px}.pw-tip i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
-.pw-prices{font-size:13px;color:var(--mut);margin-top:6px}.pw-prices b{color:var(--txt);font-weight:600}
-.pw-tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}
-.pw-tile{border:1px solid #17304a;border-radius:10px;background:linear-gradient(150deg,#0d2131,#0a1a27);padding:7px 10px;min-width:0}
+.pw-tip .r{display:flex;justify-content:space-between;gap:16px}.pw-tip i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}.pw-tip hr{border:0;border-top:1px solid #1d3a55;margin:5px 0}.pw-tip .act{font-weight:600}
+.pw-sec{font-size:12px;color:var(--mut);margin:12px 0 6px 2px}
+.pw-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.pw-tile{border:1px solid #17304a;border-radius:10px;background:linear-gradient(150deg,#0d2131,#0a1a27);padding:8px 10px;min-width:0}
 .pw-tile small{display:flex;align-items:center;gap:6px;color:var(--mut2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pw-tile small i{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
-.pw-tile b{display:block;font-size:16px;font-weight:700;margin-top:1px;white-space:nowrap}.pw-tile em{display:block;font-style:normal;color:var(--mut);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pw-note{font-size:11.5px;color:var(--mut);margin-top:8px}
+.pw-tile b{display:block;font-size:17px;font-weight:700;margin-top:2px;white-space:nowrap}.pw-tile em{display:block;font-style:normal;color:var(--mut);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pw-arr{font-size:12px;color:var(--mut);font-weight:400}
+.pw-note{font-size:11.5px;color:var(--mut);margin-top:10px}
 @media(max-width:820px){.pw-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `;
 /* ---------- history modal: click a tile -> history + already published future (v1.5.0) ---------- */
@@ -783,7 +927,7 @@ class PGEHistory extends HTMLElement {
   open(panel, key, range) {
     this._p = panel; this._k = key; const h = HIST[key], now = new Date();
     const pr = range || panel._range;
-    this._r = h.kind === "power" ? makeRange("day", range?.start || now) : h.kind === "energy" && pr ? pr : makeRange(h.kind === "rce" && now.getHours() >= 15 ? "week" : "day", now);
+    this._r = h.kind === "power" ? (range && ["day", "week", "month"].includes(range.mode) ? range : makeRange(range?.mode === "year" ? "month" : "day", range?.mode === "year" ? now : range?.start || now)) : h.kind === "energy" && pr ? pr : makeRange(h.kind === "rce" && now.getHours() >= 15 ? "week" : "day", now);
     if (h.kind === "tariff" && !H_MODES.tariff.some(x => x[0] === this._r.mode)) this._r = makeRange("day", now);
     document.addEventListener("keydown", this._key);
     this._load();
@@ -1016,53 +1160,68 @@ class PGEPanel extends PGEBase {
   }
   _pwState() {
     const t = new Date();
-    this._pw ||= { day: new Date(t.getFullYear(), t.getMonth(), t.getDate()), data: null, off: {} };
+    this._pw ||= { range: makeRange("day", t), off: {}, M: null };
     return this._pw;
   }
   _pwEnsure() {
-    const st = this._pwState(), cfg = pwConfig(this._hass, this._ids), k = isoDate(st.day) + JSON.stringify(cfg);
-    if (!Object.keys(cfg).length || st.busy) return;
-    const today = isoDate(st.day) === isoDate(new Date());
-    if (st.key === k && (!today || Date.now() - st.at < 60000)) return;
-    st.busy = true;
-    pwLoad(this._hass, cfg, +st.day, +addDays(st.day, 1)).then(d => {
-      st.busy = false;
-      if (k !== isoDate(st.day) + JSON.stringify(pwConfig(this._hass, this._ids))) { this._pwEnsure(); return; }
-      st.data = d; st.key = k; st.at = Date.now(); this._draw();
-    });
-  }
-  _pwDay(day) { const st = this._pwState(); st.day = day; st.data = null; st.key = ""; this._draw(); }
-  _bindPower(m) {
-    const card = this.shadowRoot.querySelector(".pw"); if (!card) return;
     const st = this._pwState(), cfg = pwConfig(this._hass, this._ids);
-    card.querySelectorAll("[data-pw]").forEach(b => b.onclick = () => this._pwDay(addDays(st.day, Number(b.dataset.pw))));
-    card.querySelectorAll("[data-pwd]").forEach(b => b.onclick = () => { const t = new Date(); this._pwDay(addDays(new Date(t.getFullYear(), t.getMonth(), t.getDate()), Number(b.dataset.pwd))); });
+    if (!Object.keys(cfg).length || st.busy) return;
+    const k = st.range.mode + isoDate(st.range.start) + JSON.stringify(cfg), live = st.range.end > Date.now();
+    if (st.key === k && (!live || Date.now() - st.at < 60000)) return;
+    st.busy = true;
+    const m = this._model();
+    pwFetch(this._hass, cfg, st.range, m.rceMul || 1.23).then(D => {
+      st.busy = false;
+      if (k !== st.range.mode + isoDate(st.range.start) + JSON.stringify(pwConfig(this._hass, this._ids))) { this._pwEnsure(); return; }
+      st.D = D; st.key = k; st.at = Date.now(); this._draw();
+    }).catch(e => { st.busy = false; st.D = { error: e?.message || String(e) }; st.key = k; st.at = Date.now(); this._draw(); });
+  }
+  _pwSet(range) { const st = this._pwState(); if (!range || !(range.start < range.end)) return; st.range = range; st.D = null; st.key = ""; this._draw(); }
+  _pwModel(m) { const st = this._pwState(); return st.D ? pwModel(st, st.D, m) : null; }
+  _bindPower(m, M) {
+    const card = this.shadowRoot.querySelector(".pw"); if (!card) return;
+    const st = this._pwState(), cfg = pwConfig(this._hass, this._ids), today = () => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); };
+    card.querySelectorAll("[data-pw]").forEach(b => b.onclick = () => this._pwSet(shiftRange(st.range, Number(b.dataset.pw))));
+    card.querySelectorAll("[data-pwm]").forEach(b => b.onclick = () => {
+      const k = b.dataset.pwm;
+      this._pwSet(k === "today" ? makeRange("day", today()) : k === "yday" ? makeRange("day", addDays(today(), -1)) : makeRange(k, new Date()));
+    });
     card.querySelectorAll("[data-lg]").forEach(b => b.onclick = () => { st.off[b.dataset.lg] = !st.off[b.dataset.lg]; this._draw(); });
     const svg = card.querySelector(".pw-svg"), ov = card.querySelector(".pw-ov"), tip = card.querySelector(".pw-tip");
-    if (!ov || !svg) return;
-    const hl = svg.querySelector(".pw-hl");
-    const a = +ov.dataset.a, b = +ov.dataset.b, L = +ov.dataset.l, R = +ov.dataset.r, W = +ov.dataset.w, tz = m.tariff?.price_gross || {};
-    const q = k => card.querySelector(`[data-pp="${k}"]`), def = { buy: q("buy").textContent, rce: q("rce").textContent, zone: q("zone").textContent };
-    const day = isoDate(st.day), rceMul = m.rceMul || 1.23;
-    if (st.rce?.day !== day && this._hass?.callApi) { // real 15-min RCE for hover, fetched once per day
-      st.rce = { day, rows: [] };
-      this._hass.callApi("GET", `pge_net_billing/rce?start=${day}&end=${day}&agg=raw`)
-        .then(res => { if (st.rce?.day === day) st.rce.rows = (res?.rows || []).map(x => [Date.parse(x[0]), x[1] * rceMul]); }).catch(() => {});
+    if (!ov || !svg || !M?.D || M.D.error) return;
+    const hl = svg.querySelector(".pw-hl"), dots = svg.querySelector(".pw-dots"), D = M.D;
+    const a = +ov.dataset.a, b = +ov.dataset.b, L = +ov.dataset.l, R = +ov.dataset.r, W = +ov.dataset.w;
+    const row = (c, l, v) => `<div class="r"><span><i style="background:${c}"></i>${l}</span><b>${v}</b></div>`;
+    const price = v => isNum(v) ? NF4.format(v) + " zł/kWh" : "—", kw = v => isNum(v) ? NF.format(v) + " kW" : "—";
+    const place = (fx, html) => { hl.style.display = ""; hl.setAttribute("x1", fx); hl.setAttribute("x2", fx); tip.innerHTML = html; tip.hidden = false; tip.style.left = `clamp(130px, ${fx / 10}%, calc(100% - 130px))`; };
+    const fxOf = e => { const bx = svg.getBoundingClientRect(); return (e.clientX - bx.left) / bx.width * W; };
+    if (!D.long) {
+      ov.onmousemove = e => {
+        const fx = fxOf(e), t = a + (fx - L) / (W - L - R) * (b - a), dt = new Date(t), s = M.slots[Math.floor((t - a) / 9e5)];
+        let act = "";
+        if (cfg.imp || cfg.exp) act = s?.di > 0.001 ? `<div class="r act" style="color:${PINK}"><span>Kupiłeś</span><b>${kwh(s.di)} po ${price(s.buy)}</b></div>`
+          : s?.de > 0.001 ? `<div class="r act" style="color:${CYAN}"><span>Sprzedałeś</span><b>${kwh(s.de)} po ${price(s.sell)}</b></div>` : `<div class="r"><span>Brak wymiany z siecią</span><b>—</b></div>`;
+        const q0 = s ? new Date(s.t) : dt, q1 = new Date(+q0 + 9e5);
+        const vals = ["soc", "pv", "bat", "grid", "load"].filter(k => cfg[k] && !st.off[k]).map(k => { const v = pwAt(D.raw[k], t); return row(PW[k].color, PW[k].label, !isNum(v) ? "—" : k === "soc" ? Math.round(v) + "%" : kw(v)); }).join("");
+        place(fx, `<div class="tt">${b - a > 1.5 * 864e5 ? dayShort(dt) + ", " : ""}${pad(dt.getHours())}:${pad(dt.getMinutes())} · ${s?.z === "s2" ? "strefa nocna" : "strefa dzienna"}</div>${act ? act + `<div class="mut" style="font-size:11px">w kwadransie ${pad(q0.getHours())}:${pad(q0.getMinutes())}–${pad(q1.getHours())}:${pad(q1.getMinutes())}</div><hr>` : ""}${row(PINK, "Cena kupna (G12)", price(s?.buy))}${row(CYAN, "Cena sprzedaży (RCE)", price(s?.sell))}${vals ? "<hr>" + vals : ""}`);
+      };
+    } else {
+      const bk = M.buckets.filter(x => x.v), X = t => L + (t - a) / (b - a) * (W - L - R);
+      const YS = p => 16 + (100 - p) / 100 * (400 - 16 - 34);
+      let cur = null;
+      ov.onmousemove = e => {
+        const fx = fxOf(e), t = a + (fx - L) / (W - L - R) * (b - a);
+        cur = bk.reduce((p, x) => !p || Math.abs((x.a + x.b) / 2 - t) < Math.abs((p.a + p.b) / 2 - t) ? x : p, null); if (!cur) return;
+        const v = cur.v, cx = X((cur.a + cur.b) / 2);
+        dots.innerHTML = cfg.soc && isNum(v.sMax) ? `<circle cx="${cx}" cy="${YS(v.sMax)}" r="4.5" fill="${TONE.blue}"/>` : "";
+        const bst = v.best ? `${price(v.best.sell)} (${r2(v.best.t)})` : "—";
+        place(cx, `<div class="tt">${esc(cur.tip)}${cur.b > Date.now() ? " (do teraz)" : ""} · kliknij = szczegóły</div>${cfg.imp ? row(PINK, "Kupiłeś po (śr.)", price(v.buy)) + row(TONE.red, "Zapłacono", zl(v.cost)) : ""}${cfg.exp ? row(CYAN, "Sprzedałeś po (śr.)", price(v.sell)) + row(CYAN, "Najwyższa sprzedaż", bst) + row(TONE.green, "Za sprzedaż", zl(v.val)) : ""}<hr>${cfg.pv ? row(PW.pv.color, "Produkcja", kwh(v.pv)) : ""}${cfg.bat ? row(PW.bat.color, "Ładowanie / rozład.", kwh(v.ch) + " / " + kwh(v.dis)) : ""}${cfg.imp || cfg.exp ? row(PW.grid.color, "Import / eksport", kwh(v.imp) + " / " + kwh(v.exp)) : ""}${cfg.load ? row(PW.load.color, "Pobór domu", kwh(v.load)) : ""}${cfg.soc ? row(TONE.blue, "SOC min / maks", (isNum(v.sMin) ? Math.round(v.sMin) + "%" : "—") + " → " + (isNum(v.sMax) ? Math.round(v.sMax) + "%" : "—")) : ""}`);
+      };
+      ov.onclick = () => { if (cur) this._pwSet(st.range.mode === "year" ? makeRange("month", cur.d) : makeRange("day", cur.d)); };
+      ov.style.cursor = "pointer";
     }
-    ov.onmousemove = e => {
-      const bx = svg.getBoundingClientRect(), fx = (e.clientX - bx.left) / bx.width * W, t = a + (fx - L) / (W - L - R) * (b - a);
-      hl.style.display = ""; hl.setAttribute("x1", fx); hl.setAttribute("x2", fx);
-      const dt = new Date(t), z = g12Zone(dt);
-      const rows = PW_ORDER.filter(k => cfg[k] && !st.off[k]).map(k => { const v = pwAt(st.data?.[k], t); return `<div class="r"><span><i style="background:${PW[k].color}"></i>${PW[k].label}</span><b>${!isNum(v) ? "—" : k === "soc" ? Math.round(v) + "%" : NF.format(v) + " kW"}</b></div>`; }).join("");
-      tip.innerHTML = `<div class="tt">${pad(dt.getHours())}:${pad(dt.getMinutes())} · ${z === "s2" ? "strefa nocna" : "strefa dzienna"}</div>${rows}`;
-      tip.hidden = false; tip.style.left = `clamp(110px, ${fx / 10}%, calc(100% - 110px))`;
-      const hit = (st.rce?.rows || []).find(x => t >= x[0] && t < x[0] + 9e5);
-      q("buy").textContent = isNum(tz[z]) ? NF4.format(tz[z]) + " zł/kWh" : "—";
-      q("rce").textContent = hit ? NF4.format(hit[1]) + " zł/kWh" : "—";
-      q("zone").textContent = z === "s2" ? "strefa nocna" : "strefa dzienna";
-      q("at").textContent = ` · ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-    };
-    ov.onmouseleave = () => { tip.hidden = true; hl.style.display = "none"; q("buy").textContent = def.buy; q("rce").textContent = def.rce; q("zone").textContent = def.zone; q("at").textContent = ""; };
+    function r2(t) { const d = new Date(t); return `${dayShort(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+    ov.onmouseleave = () => { tip.hidden = true; hl.style.display = "none"; if (dots) dots.innerHTML = ""; };
   }
   _setRange(r) {
     if (!r || !(r.start < r.end)) return;
@@ -1173,7 +1332,7 @@ class PGEPanel extends PGEBase {
     </div>
   </section>
 
-  ${pwCard(this._pwState(), pwConfig(this._hass, this._ids), m)}
+  ${(this._pwM = this._pwModel(m), pwCard(this._pwState(), pwConfig(this._hass, this._ids), m, this._pwM, this._hass))}
 
   ${chartCard(ch)}
 
@@ -1199,9 +1358,9 @@ class PGEPanel extends PGEBase {
 <div class="foot">Kwoty są prognozą lokalną integracji (stawki z konfiguracji, RCE z PSE), nie fakturą PGE. Zakup energii w tabeli i kafelku – brutto (bez dystrybucji). v${VERSION}</div>
 </main>`;
     this._bindChart(m);
-    this._bindPower(m); this._pwEnsure();
+    this._bindPower(m, this._pwM); this._pwEnsure();
     this.shadowRoot.querySelectorAll("[data-hist]").forEach(el => {
-      const go = () => openHistory(this, el.dataset.hist, el.dataset.pi !== undefined ? periodRange(m, Number(el.dataset.pi)) : el.dataset.hist.startsWith("pw_") ? makeRange("day", this._pwState().day) : undefined);
+      const go = () => openHistory(this, el.dataset.hist, el.dataset.pi !== undefined ? periodRange(m, Number(el.dataset.pi)) : el.dataset.hist.startsWith("pw_") || el.closest(".pw") ? this._pwState().range : undefined);
       el.onclick = e => { if (e.target.closest(".info")) return; go(); };
       el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } };
     });

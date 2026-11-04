@@ -11,7 +11,9 @@
           "load_power_entity": "House load power (optional)",
           "grid_power_entity": "Grid power (optional)",
           "battery_invert": "Invert battery sign",
-          "grid_invert": "Invert grid sign"
+          "grid_invert": "Invert grid sign",
+          "grid_import_total_entity": "Inverter grid import total (kWh, optional)",
+          "grid_export_total_entity": "Inverter grid export total (kWh, optional)"
         }
       }
     }
@@ -26,7 +28,9 @@
           "load_power_entity": "House load power (optional)",
           "grid_power_entity": "Grid power (optional)",
           "battery_invert": "Invert battery sign",
-          "grid_invert": "Invert grid sign"
+          "grid_invert": "Invert grid sign",
+          "grid_import_total_entity": "Inverter grid import total (kWh, optional)",
+          "grid_export_total_entity": "Inverter grid export total (kWh, optional)"
         }
       }
     }

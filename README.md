@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.6.0
+# PGE Net-Billing v1.7.0
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -16,6 +16,16 @@ Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing 
 Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Nowe w v1.7.0 – „Moc i bateria”: okresy, neonowe ceny, faktyczne kupno i sprzedaż
+- Przyciski ‹ › · Dzisiaj · Wczoraj · Tydzień · Miesiąc · Rok. Wszystkie widoki liniowe.
+  - Dzień / Tydzień: surowe odczyty mocy (bez uśredniania; przy wielu odczytach na piksel rysowany jest najniższy i najwyższy).
+  - Miesiąc / Rok: punkt = suma energii w dniu / miesiącu (z godzinowych statystyk HA: moc × 1 h), SOC = najniższy i najwyższy odczyt; klik = wejście w dzień / miesiąc.
+- **SOC magazynu** – pogrubiona linia na wierzchu wykresu.
+- **Ceny na wykresie (prawa oś, zł/kWh brutto)**: neonowy róż = cena kupna G12, neonowy turkus = cena sprzedaży RCE. Gruba świecąca linia = kwadranse, w których faktycznie kupowałeś / sprzedawałeś.
+- **Faktyczne kupno i sprzedaż z liczników falownika** (nowe opcje: „Falownik – pobór z sieci łącznie” i „oddanie do sieci łącznie”, kWh od uruchomienia): przyrost licznika w kwadransie × cena z tego kwadransu. Dymek: „Kupiłeś X kWh po Y” / „Sprzedałeś X kWh po Y”.
+- Kafle (klikalne → historia): Produkcja PV, Ładowanie baterii, Rozładowanie baterii, SOC magazynu min / maks, Import z sieci, Eksport do sieci, Pobór domu · Śr. cena kupna, Śr. cena sprzedaży, Najwyższa cena sprzedaży, Zapłacono za zakup, Wartość sprzedaży. Średnie = suma zł / suma kWh (ważone faktyczną energią).
+- Depozyt, rachunek i „Przepływ energii” bez zmian (dalej z liczników skonfigurowanych w integracji).
 
 ## Nowe w v1.6.0 – wykres „Moc i bateria”
 - Nowa karta nad „Przepływem energii”: SOC baterii (%, prawa oś) oraz moc produkcji PV, baterii, sieci i konsumpcji (kW) w ciągu dnia. Strefy nocne G12 podświetlone, linia „teraz”, ‹ › / Wczoraj / Dzisiaj.

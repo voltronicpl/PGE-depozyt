@@ -29,7 +29,9 @@
           "load_power_entity": "Moc konsumpcji domu (W/kW) – opcjonalnie",
           "grid_power_entity": "Moc sieci (W/kW) – opcjonalnie",
           "battery_invert": "Odwróć znak baterii (gdy + = rozładowanie)",
-          "grid_invert": "Odwróć znak sieci (gdy + = oddawanie)"
+          "grid_invert": "Odwróć znak sieci (gdy + = oddawanie)",
+          "grid_import_total_entity": "Falownik – pobór z sieci łącznie (kWh) – opcjonalnie",
+          "grid_export_total_entity": "Falownik – oddanie do sieci łącznie (kWh) – opcjonalnie"
         }
       }
     }
@@ -63,7 +65,9 @@
           "load_power_entity": "Moc konsumpcji domu (W/kW) – opcjonalnie",
           "grid_power_entity": "Moc sieci (W/kW) – opcjonalnie",
           "battery_invert": "Odwróć znak baterii (gdy + = rozładowanie)",
-          "grid_invert": "Odwróć znak sieci (gdy + = oddawanie)"
+          "grid_invert": "Odwróć znak sieci (gdy + = oddawanie)",
+          "grid_import_total_entity": "Falownik – pobór z sieci łącznie (kWh) – opcjonalnie",
+          "grid_export_total_entity": "Falownik – oddanie do sieci łącznie (kWh) – opcjonalnie"
         }
       }
     }

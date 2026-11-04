@@ -1,7 +1,9 @@
 DOMAIN = "pge_net_billing"
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 # v1.6.0: optional live power sensors for the "Moc i bateria" chart (W or kW, SOC in %)
-POWER_ENTITIES = ["pv_power_entity", "battery_power_entity", "battery_soc_entity", "load_power_entity", "grid_power_entity"]
+POWER_ENTITIES = ["pv_power_entity", "battery_power_entity", "battery_soc_entity", "load_power_entity", "grid_power_entity",
+                  # v1.7.0: inverter lifetime counters (kWh) = physical buy / sell
+                  "grid_import_total_entity", "grid_export_total_entity"]
 # sign flags: chart convention is + = charging / import from grid
 POWER_FLAGS = ["battery_invert", "grid_invert"]
 DEFAULTS = {
