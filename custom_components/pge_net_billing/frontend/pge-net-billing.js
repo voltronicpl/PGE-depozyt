@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.7.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.7.1 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.7.0";
+const VERSION = "1.7.1";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -1364,7 +1364,10 @@ class PGEPanel extends PGEBase {
       el.onclick = e => { if (e.target.closest(".info")) return; go(); };
       el.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } };
     });
-    this.shadowRoot.querySelectorAll(".nav").forEach(b => b.onclick = () => { this._offset = Math.min(0, this._offset + Number(b.dataset.d)); this._range = makeRange("month", monthStart(new Date(), this._offset)); this._chartRaw = null; this._sig = ""; this._refresh(); });
+    this.shadowRoot.querySelectorAll(".nav").forEach(b => b.onclick = () => { this._offset = Math.min(0, this._offset + Number(b.dataset.d)); this._range = makeRange("month", monthStart(new Date(), this._offset)); this._chartRaw = null;
+      // v1.7.1: header month = whole dashboard – "Moc i bateria" jumps to the month view of that month too
+      const pw = this._pwState(); pw.range = makeRange("month", monthStart(new Date(), this._offset)); pw.D = null; pw.key = "";
+      this._sig = ""; this._refresh(); });
     // aside tiles are previews only – no navigation inside the panel
     this.shadowRoot.querySelectorAll(".aside .link").forEach(el => el.classList.remove("link"));
   }
