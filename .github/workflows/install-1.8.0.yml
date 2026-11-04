@@ -1,0 +1,25 @@
+name: Install PGE Net-Billing 1.8.0
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pge_net_billing-1.8.0.zip'
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract package
+        run: unzip -o pge_net_billing-1.8.0.zip
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/pge_net_billing README.md hacs.json
+          git diff --cached --quiet || (git commit -m "Install PGE Net-Billing 1.8.0" && git push)
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create 1.8.0 --target "$(git rev-parse HEAD)" --title "1.8.0" --notes "PGE Net-Billing 1.8.0" --latest

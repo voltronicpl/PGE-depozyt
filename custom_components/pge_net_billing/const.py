@@ -1,5 +1,5 @@
 DOMAIN = "pge_net_billing"
-VERSION = "1.7.6"
+VERSION = "1.8.0"
 # v1.6.0: optional live power sensors for the "Moc i bateria" chart (W or kW, SOC in %)
 POWER_ENTITIES = ["pv_power_entity", "battery_power_entity", "battery_soc_entity", "load_power_entity", "grid_power_entity",
                   # v1.7.0: inverter lifetime counters (kWh) = physical buy / sell
@@ -35,4 +35,6 @@ DEFAULTS = {
     "fixed_trade": 10.48, "fixed_power": 24.05,
     "fixed_network": 14.40, "fixed_subscription": 2.25,
     "vat": 0.23, "rce_price": 0.0, "rce_multiplier": 1.23,
+    # v1.8.0: battery round-trip efficiency for the automation profit threshold
+    "battery_efficiency": 0.90,
 }

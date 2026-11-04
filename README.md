@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.7.6
+# PGE Net-Billing v1.8.0
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -16,6 +16,13 @@ Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing 
 Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Nowe w v1.8.0 – „Zarobek z automatyki”
+- Sekcja Pieniądze: kafle „Zakup – poszło na dom” / „Zakup – do magazynu” (w każdym kwadransie najpierw dom, reszta do baterii) + pasek „Zapłacono = na dom + do magazynu · sprzedano X za Y”.
+- Nowa sekcja **Zarobek z automatyki** z wykresem (Dzień = godziny, Tydzień / Miesiąc = dni, Rok = miesiące; zmienia się razem z „Moc i bateria”): kupno do magazynu ↓, sprzedaż ↑ (zielona powyżej, czerwona poniżej progu), cena RCE, cena kupna i przerywany próg opłacalności. Dzień: pasek osi czasu.
+- **Próg opłacalności** = (koszt kWh w magazynie + dystrybucja zmienna brutto, której depozyt nie pokrywa) ÷ sprawność baterii. Każdy sprzedany kwadrans porównywany z progiem.
+- Kafle: Realny zarobek automatyki, Próg opłacalności, kWh sprzedane powyżej progu, kWh sprzedane poniżej progu, Najgorsza / Najlepsza sprzedaż, Średni koszt kWh w magazynie, Straty baterii (szac.). Wszystkie liczone dla wybranego okresu.
+- Nowa opcja: „Sprawność baterii” (domyślnie 0,90).
 
 ## Nowe w v1.7.6
 - Kafle „Kupno – tania taryfa nocna” / „Kupno – droga taryfa dzienna”: kWh w strefie + ile za nie wyszło (zł) i % importu. To samo w dymku Miesiąc / Rok.

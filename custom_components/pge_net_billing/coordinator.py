@@ -243,8 +243,12 @@ class PGELedger:
                 'months': self._settlements(credits),
                 'deposit_credits': credits,
                 'power': {**{k.replace('_entity', ''): auto_entity(self.hass, k, s.get(k)) for k in POWER_ENTITIES},
-                          **{k: bool(s.get(k, False)) for k in POWER_FLAGS}},
-                'tariff': {'name': 'G12', 'zone': z, 'price_gross': price, 'vat': vat},
+                          **{k: bool(s.get(k, False)) for k in POWER_FLAGS},
+                          'efficiency': float(s.get('battery_efficiency', 0.9))},
+                'tariff': {'name': 'G12', 'zone': z, 'price_gross': price, 'vat': vat,
+                           # distribution part (variable) – the deposit does not pay it
+                           'dist_gross': {k: money((float(s[f'distribution_{k}']) + variable) * (1 + vat)) for k in ('s1', 's2')},
+                           'energy_gross': {k: money(float(s[f'buy_{k}']) * (1 + vat)) for k in ('s1', 's2')}},
             }
         if kind == 'rce_current':
             local = dt_util.now().astimezone(WARSAW)

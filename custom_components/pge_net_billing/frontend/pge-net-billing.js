@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.7.6 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.8.0 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.7.6";
+const VERSION = "1.8.0";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -757,7 +757,41 @@ function pwAgg(D, slots, a, b, tz) {
     if (isNum(s.di)) { add("imp", s.di); if (isNum(s.buy)) add("cost", s.di * s.buy); add(s.z === "s2" ? "impS2" : "impS1", s.di); if (isNum(s.buy)) add(s.z === "s2" ? "costS2" : "costS1", s.di * s.buy); }
     if (isNum(s.de)) { add("exp", s.de); if (isNum(s.sell)) add("val", s.de * s.sell); if (s.de > 0.001 && isNum(s.sell) && (!r.best || s.sell > r.best.sell)) r.best = { sell: s.sell, t: s.t, kwh: s.de }; }
   }
+  // v1.7.7: purchase split – what went straight to the house vs. into storage (same quarter / hour: house first)
+  if (isNum(r.imp) && (E.loadE || D.raw?.load?.length || D.st?.load?.length)) {
+    let hk = 0, hc = 0;
+    const inR = s => s.t >= a && s.t < b && s.past && isNum(s.di);
+    if (!D.long) {
+      for (const s of slots) { if (!inR(s)) continue; const t1 = Math.min(s.t + 9e5, D.end);
+        const dl = E.loadE ? pwDelta(E.loadE, s.t, t1) : pwEnergy(D.raw.load, s.t, t1).pos; if (!isNum(dl)) continue;
+        const h = Math.min(s.di, Math.max(0, dl)); s.hb = s.di - h; hk += h; if (isNum(s.buy)) hc += h * s.buy; }
+    } else {
+      const lh = new Map(); for (const x of E.loadE || []) lh.set(x.t, x.e); if (!E.loadE) for (const x of D.st.load || []) lh.set(x.t, Math.max(0, x.mean));
+      const byH = new Map(); for (const s of slots) { if (!inR(s)) continue; const hT = s.t - s.t % 36e5; (byH.get(hT) || byH.set(hT, []).get(hT)).push(s); }
+      for (const [hT, ss] of byH) { const imp = ss.reduce((q, s) => q + s.di, 0), ld = lh.get(hT); if (!isNum(ld) || imp <= 0) continue;
+        const k = Math.min(imp, ld) / imp; for (const s of ss) { s.hb = s.di * (1 - k); hk += s.di * k; if (isNum(s.buy)) hc += s.di * k * s.buy; } }
+    }
+    r.houseKwh = hk; r.houseCost = hc; r.batKwh = Math.max(0, r.imp - hk); r.batCost = Math.max(0, (r.cost || 0) - hc);
+    if (isNum(r.val)) r.profit = r.val - (r.exp || 0) * (r.batKwh > 0 ? r.batCost / r.batKwh : 0);
+  }
   r.buy = isNum(r.cost) && r.imp > 0 ? r.cost / r.imp : null;
+  // v1.8.0: automation profit – a sold kWh pays off only above: (cost of the kWh in storage + distribution you pay anyway when buying it back) / battery efficiency
+  const ap = D.ap;
+  if (ap && isNum(r.exp)) {
+    const sc = isNum(ap.fixedSc) ? ap.fixedSc : r.batKwh > 0 ? r.batCost / r.batKwh : isNum(ap.cost) ? ap.cost : isNum(r.buy) ? r.buy : ap.fallback;
+    const thr = (sc + ap.dist) / ap.eff;
+    const A = r.ap = { sc, thr, okK: 0, okV: 0, okG: 0, badK: 0, badV: 0, badG: 0, best: null, worst: null };
+    for (const s of slots) {
+      if (s.t < a || s.t >= b || !s.past || !(s.de > 0.001) || !isNum(s.sell)) continue;
+      const g = s.de * (s.sell - thr), x = { t: s.t, sell: s.sell, kwh: s.de, g };
+      if (s.sell >= thr) { A.okK += s.de; A.okV += s.de * s.sell; A.okG += g; } else { A.badK += s.de; A.badV += s.de * s.sell; A.badG += g; }
+      if (!A.best || s.sell > A.best.sell) A.best = x; if (!A.worst || s.sell < A.worst.sell) A.worst = x;
+    }
+    A.gain = A.okG + A.badG;
+    const fromBat = isNum(r.dis) ? r.dis : r.exp;
+    A.loss = isNum(fromBat) ? fromBat * sc * (1 / ap.eff - 1) : null;
+    A.toBat = slots.filter(s => s.t >= a && s.t < b && s.past).reduce((q, s) => q + (s.hb || 0), 0);
+  }
   r.sell = isNum(r.val) && r.exp > 0 ? r.val / r.exp : null;
   return r;
 }
@@ -770,7 +804,10 @@ function pwBuckets(r) {
 function pwModel(st, D, m) {
   const r = st.range, tz = m.tariff?.price_gross || {};
   if (!D || D.error) return { r, D };
-  const slots = pwSlots(D, tz), tot = pwAgg(D, slots, D.a, D.b, tz);
+  const tr = m.tariff || {}, pw = tr.dist_gross ? { dist: Number(tr.dist_gross.s1), eff: Math.min(1, Math.max(0.5, Number(st.eff || 0.9))), fallback: Number(tr.price_gross?.s1) } : null;
+  D.ap = pw && isNum(pw.dist) ? pw : null;
+  const slots = pwSlots(D, tz); if (D.ap) D.ap.fixedSc = null;
+  const tot = pwAgg(D, slots, D.a, D.b, tz); if (D.ap && tot.ap) D.ap.fixedSc = tot.ap.sc; // buckets use the period threshold
   const buckets = D.long ? pwBuckets(r).map(x => ({ ...x, live: x.a < D.end, v: x.a < D.end ? pwAgg(D, slots, x.a, x.b, tz) : null })) : null;
   return { r, D, slots, tot, buckets };
 }
@@ -860,13 +897,16 @@ function pwCard(st, cfg, m, M, hass) {
   ].join("");
   const b = T.best;
   const e2 = [
+    tile("cost", "cost", TONE.red, "Zapłacono za zakup", cfg.imp ? zl(T.cost) : "—", cfg.imp ? "energia brutto (G12)" : miss),
+    tile("house", "cost", "#ff8a5b", "Zakup – poszło na dom", cfg.imp && isNum(T.houseCost) ? zl(T.houseCost) : "—", cfg.imp ? (isNum(T.houseKwh) ? `${kwh(T.houseKwh)} · ${isNum(T.imp) && T.imp > 0 ? Math.round((T.houseKwh || 0) / T.imp * 100) : 0}% zakupu` : "brak zużycia domu") : miss),
+    tile("tobat", "cost", "#8b7cff", "Zakup – do magazynu", cfg.imp && isNum(T.batCost) ? zl(T.batCost) : "—", cfg.imp ? (isNum(T.batKwh) ? `${kwh(T.batKwh)} · ${isNum(T.imp) && T.imp > 0 ? Math.round((T.batKwh || 0) / T.imp * 100) : 0}% zakupu` : "brak zużycia domu") : miss, "#b7aaff"),
+    tile("val", "sell", TONE.green, "Wartość sprzedaży", cfg.exp ? zl(T.val) : "—", cfg.exp ? "RCE brutto – trafia do depozytu" : miss),
+    tile("profit", "sell", TONE.green, "Zarobek na sprzedaży", cfg.exp && isNum(T.profit) ? zl(T.profit, true) : "—", cfg.exp ? "sprzedaż − koszt sprzedanej energii z magazynu" : miss, isNum(T.profit) && T.profit < 0 ? TONE.red : TONE.green),
     tile("buy", "tariff", PINK, "Śr. cena kupna", cfg.imp ? price(T.buy) : "—", cfg.imp ? `z ${kwh(T.imp)} importu` : miss),
     tile("cheap", "tariff", TONE.blue, "Kupno – tania taryfa nocna", cfg.imp ? kwh(T.impS2 || 0) : "—", cfg.imp ? `za ${zl(T.costS2 || 0)} · ${isNum(T.imp) && T.imp > 0 ? Math.round((T.impS2 || 0) / T.imp * 100) : 0}%` : miss, "#7fb3ff"),
     tile("dear", "tariff", PINK, "Kupno – droga taryfa dzienna", cfg.imp ? kwh(T.impS1 || 0) : "—", cfg.imp ? `za ${zl(T.costS1 || 0)} · ${isNum(T.imp) && T.imp > 0 ? Math.round((T.impS1 || 0) / T.imp * 100) : 0}%` : miss),
     tile("sell", "rce", CYAN, "Śr. cena sprzedaży", cfg.exp ? price(T.sell) : "—", cfg.exp ? `z ${kwh(T.exp)} eksportu` : miss),
     tile("best", "rce", CYAN, "Najwyższa cena sprzedaży", cfg.exp ? (b ? price(b.sell) : "—") : "—", cfg.exp ? (b ? `${isDay ? "" : dayShort(new Date(b.t)) + " "}${pad(new Date(b.t).getHours())}:${pad(new Date(b.t).getMinutes())}–${pad(new Date(b.t + 9e5).getHours())}:${pad(new Date(b.t + 9e5).getMinutes())} · sprzedano ${kwh(b.kwh)}` : "brak sprzedaży w okresie") : miss),
-    tile("cost", "cost", TONE.red, "Zapłacono za zakup", cfg.imp ? zl(T.cost) : "—", cfg.imp ? "energia brutto (G12)" : miss),
-    tile("val", "sell", TONE.green, "Wartość sprzedaży", cfg.exp ? zl(T.val) : "—", cfg.exp ? "RCE brutto – trafia do depozytu" : miss),
   ].join("");
   const body = !D ? `<div class="nohist big">Ładowanie…</div>` : D.error ? `<div class="nohist big">Nie udało się pobrać historii: ${esc(D.error)}</div>` : pwSvg(M, st.off);
   return `<section class="box pw">
@@ -878,7 +918,9 @@ function pwCard(st, cfg, m, M, hass) {
   <div class="pw-plot">${body}<div class="fc-tip pw-tip" hidden></div></div>
   <div class="pw-sec">Energia</div><div class="pw-tiles">${e1}</div>
   <div class="pw-sec">Pieniądze</div><div class="pw-tiles">${e2}</div>
-  <div class="pw-note">${D?.long ? "Punkt = suma energii w " + (r.mode === "year" ? "miesiącu" : "dniu") + " (z liczników falownika, a gdzie ich brak – moc z godzinowych statystyk HA × 1 h; SOC = najniższy i najwyższy odczyt). " : "Surowe odczyty z historii HA (bez uśredniania; przy wielu odczytach na piksel rysowany jest najniższy i najwyższy). "}Kupno / sprzedaż = przyrost liczników falownika w każdym kwadransie × cena G12 brutto / RCE brutto z tego kwadransu. Gruba neonowa linia = wtedy faktycznie kupowałeś (róż) albo sprzedawałeś (turkus). Ceny G12 wg obecnych stawek z konfiguracji.</div>
+  ${cfg.imp && isNum(T.houseCost) ? `<div class="pw-flow"><b style="color:${TONE.red}">Zapłacono ${zl(T.cost)}</b><span>=</span><b style="color:#ff8a5b">na dom ${zl(T.houseCost)}</b><span>+</span><b style="color:#b7aaff">do magazynu ${zl(T.batCost)}</b>${cfg.exp && isNum(T.val) ? `<span>·</span><span>sprzedano ${kwh(T.exp)} za</span><b style="color:${TONE.green}">${zl(T.val)}</b>` : ""}</div>` : ""}
+  ${apSection(M, cfg, isDay)}
+  <div class="pw-note">${D?.long ? "Punkt = suma energii w " + (r.mode === "year" ? "miesiącu" : "dniu") + " (z liczników falownika, a gdzie ich brak – moc z godzinowych statystyk HA × 1 h; SOC = najniższy i najwyższy odczyt). " : "Surowe odczyty z historii HA (bez uśredniania; przy wielu odczytach na piksel rysowany jest najniższy i najwyższy). "}Kupno / sprzedaż = przyrost liczników falownika w każdym kwadransie × cena G12 brutto / RCE brutto z tego kwadransu. „Na dom” = w każdym kwadransie (Miesiąc / Rok: godzinie) mniejsza z wartości: kupione, zużyte przez dom; reszta = do magazynu. Zarobek = sprzedaż − sprzedane kWh × średni koszt zakupu do magazynu. Gruba neonowa linia = wtedy faktycznie kupowałeś (róż) albo sprzedawałeś (turkus). Ceny G12 wg obecnych stawek z konfiguracji.</div>
 </section>`;
 }
 const PW_CSS = `
@@ -893,8 +935,94 @@ const PW_CSS = `
 .pw-tile{border:1px solid #17304a;border-radius:10px;background:linear-gradient(150deg,#0d2131,#0a1a27);padding:8px 10px;min-width:0}
 .pw-tile small{display:flex;align-items:center;gap:6px;color:var(--mut2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pw-tile small i{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
 .pw-tile b{display:block;font-size:17px;font-weight:700;margin-top:2px;white-space:nowrap}.pw-tile em{display:block;font-style:normal;color:var(--mut);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pw-arr{font-size:12px;color:var(--mut);font-weight:400}
-.pw-note{font-size:11.5px;color:var(--mut);margin-top:10px}
+.pw-note{font-size:11.5px;color:var(--mut);margin-top:10px}.pw-flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;margin:10px 0 0 2px;color:var(--mut2)}.pw-flow span{color:var(--mut)}.pw-flow b{font-weight:600}
 @media(max-width:820px){.pw-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+`;
+/* ---------- "Zarobek z automatyki" (v1.8.0): when the system bought to storage and sold above / below the break-even ---------- */
+function apBuckets(M) {
+  const r = M.r, D = M.D, thr = M.tot?.ap?.thr, out = [];
+  if (!isNum(thr)) return null;
+  const mk = (a, b, lab, tip, d) => ({ a, b, lab, tip, d, okK: 0, badK: 0, okG: 0, badG: 0, val: 0, sk: 0, bk: 0, bc: 0, prices: [] });
+  if (r.mode === "day") for (let h = 0; h < 24; h++) { const a = +new Date(new Date(D.a).setHours(h, 0, 0, 0)); out.push(mk(a, a + 36e5, pad(h), `${pad(h)}:00–${pad((h + 1) % 24)}:00`, new Date(a))); }
+  else if (r.mode === "year") for (let m = 0; m < 12; m++) { const a = new Date(r.start.getFullYear(), m, 1); out.push(mk(+a, +new Date(a.getFullYear(), m + 1, 1), MONTH_SHORT[m], monthName(a), a)); }
+  else for (let d = new Date(r.start); d < r.end; d = addDays(d, 1)) out.push(mk(+d, +addDays(d, 1), r.mode === "week" ? ["nd", "pon", "wt", "śr", "czw", "pt", "sob"][d.getDay()] : pad(d.getDate()), `${d.getDate()} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`, d));
+  let j = 0;
+  for (const s of M.slots) {
+    while (j < out.length && s.t >= out[j].b) j++;
+    const x = out[j]; if (!x || s.t < x.a || !s.past) continue;
+    if (s.hb > 0) { x.bk += s.hb; if (isNum(s.buy)) x.bc += s.hb * s.buy; }
+    if (s.de > 0.001 && isNum(s.sell)) { const g = s.de * (s.sell - thr); x.sk += s.de; x.val += s.de * s.sell; if (s.sell >= thr) { x.okK += s.de; x.okG += g; } else { x.badK += s.de; x.badG += g; } }
+  }
+  for (const x of out) x.live = x.a < D.end;
+  return { thr, list: out };
+}
+function apSvg(M, AB) {
+  const W = 1000, H = 330, L = 50, R = 60, T = 16, B = 34, D = M.D, a = AB.list[0].a, b = AB.list[AB.list.length - 1].b, now = Date.now();
+  const X = t => L + (t - a) / (b - a) * (W - L - R), short = M.r.mode === "day" || M.r.mode === "week";
+  const up = Math.max(0.5, ...AB.list.map(x => x.sk)), dn = Math.max(0.5, ...AB.list.map(x => x.bk));
+  const st = niceStep(Math.max(up, dn), 3), hi = Math.ceil(up / st) * st, lo = -Math.ceil(dn / st) * st;
+  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  const px = [AB.thr]; if (short) for (const s of M.slots) if (s.t >= a && s.t < b) px.push(s.sell, s.buy); else null;
+  if (!short) for (const x of AB.list) if (x.sk > 0) px.push(x.val / x.sk); if (!short) for (const x of AB.list) if (x.bk > 0) px.push(x.bc / x.bk);
+  const pTop = pwPriceTop(px), YP = v => T + (pTop - v) / pTop * (H - T - B);
+  let g = `<defs><filter id="apgl" x="-5%" y="-50%" width="110%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>`;
+  if (M.r.mode === "day") for (const x of AB.list) if (g12Zone(new Date(x.a)) === "s2") g += `<rect x="${X(x.a)}" y="${T}" width="${X(x.b) - X(x.a)}" height="${H - T - B}" class="pw-night"/>`;
+  for (let v = lo; v <= hi + st / 1e6; v += st) g += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="${Math.abs(v) < st / 1e6 ? "zero" : "grid"}"/><text x="${L - 7}" y="${Y(v) + 4}" text-anchor="end" class="ax">${String(+Math.abs(v).toFixed(2)).replace(".", ",")}</text>`;
+  const pst = pTop > 4 ? 1 : 0.5; for (let v = 0; v <= pTop + 1e-9; v += pst) g += `<text x="${W - R + 6}" y="${YP(v) + 4}" class="ax pw-pax">${NF.format(v)}</text>`;
+  g += `<text x="4" y="12" class="unit">kWh</text><text x="${W - R + 4}" y="12" class="unit pw-pax">zł/kWh</text><text x="${L + 5}" y="${Y(hi) + 12}" class="ax" style="fill:${TONE.green};font-size:11px">sprzedaż ↑</text><text x="${L + 5}" y="${Y(lo) - 5}" class="ax" style="fill:#8b7cff;font-size:11px">kupno do magazynu ↓</text>`;
+  const ev = AB.list.length > 16 ? 2 : 1;
+  AB.list.forEach((x, i) => { if (i % ev === 0) g += `<text x="${X((x.a + x.b) / 2)}" y="${H - 12}" text-anchor="middle" class="xl">${x.lab}</text>`; });
+  for (const x of AB.list) {
+    if (!x.live) continue;
+    const w = (X(x.b) - X(x.a)) * .62, x0 = X(x.a) + (X(x.b) - X(x.a) - w) / 2;
+    if (x.okK > 0) g += `<rect x="${x0}" y="${Y(x.okK)}" width="${w}" height="${Y(0) - Y(x.okK)}" rx="2.5" fill="${TONE.green}" opacity=".85"/>`;
+    if (x.badK > 0) g += `<rect x="${x0}" y="${Y(x.okK + x.badK)}" width="${w}" height="${Y(x.okK) - Y(x.okK + x.badK)}" rx="2.5" fill="${TONE.red}" opacity=".9"/>`;
+    if (x.bk > 0) g += `<rect x="${x0}" y="${Y(0)}" width="${w}" height="${Y(-x.bk) - Y(0)}" rx="2.5" fill="#8b7cff" opacity=".7"/>`;
+  }
+  if (short) {
+    const step = (k, c, wd, ex) => { let d = ""; for (const s of M.slots) { if (s.t < a || s.t >= b || !isNum(s[k])) continue; const y = YP(s[k]).toFixed(1); d += `M${X(s.t).toFixed(1)} ${y}H${X(s.t + 9e5).toFixed(1)}`; } return d ? `<path d="${d}" fill="none" stroke="${c}" stroke-width="${wd}" ${ex}/>` : ""; };
+    g += step("buy", PINK, 1.6, 'opacity=".7"') + step("sell", CYAN, 2.6, 'filter="url(#apgl)"');
+  } else {
+    for (const [f, c, wd] of [[x => x.bk > 0 ? x.bc / x.bk : null, PINK, 1.8], [x => x.sk > 0 ? x.val / x.sk : null, CYAN, 2.8]]) {
+      const p = AB.list.filter(x => x.live && isNum(f(x))).map(x => [X((x.a + x.b) / 2), YP(f(x))]);
+      if (p.length) g += `<path d="${pwSmooth(p)}" fill="none" stroke="${c}" stroke-width="${wd}" ${c === CYAN ? 'filter="url(#apgl)"' : 'opacity=".75"'}/>` + p.map(q => `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="3" fill="${c}"/>`).join("");
+    }
+  }
+  g += `<line x1="${L}" x2="${W - R}" y1="${YP(AB.thr)}" y2="${YP(AB.thr)}" stroke="${CYAN}" stroke-width="1.6" stroke-dasharray="7 5" opacity=".9"/><text x="${W - R - 4}" y="${YP(AB.thr) - 5}" text-anchor="end" class="ax pw-pax" style="font-size:11px">próg ${NF4.format(AB.thr)} zł</text>`;
+  if (now > a && now < b) g += `<line x1="${X(now)}" x2="${X(now)}" y1="${T}" y2="${H - B}" class="nowl"/><text x="${X(now) + 5}" y="${T + 12}" class="nowt">teraz</text>`;
+  g += `<line class="ap-hl" y1="${T}" y2="${H - B}" style="display:none"/>` + AB.list.map((x, i) => `<rect class="ap-hit" data-i="${i}" x="${X(x.a)}" y="${T}" width="${Math.max(1, X(x.b) - X(x.a))}" height="${H - T - B}" fill="transparent"/>`).join("");
+  return `<svg class="pw-svg ap-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${g}</svg>`;
+}
+function apSection(M, cfg, isDay) {
+  const T = M?.tot || {}, A = T.ap, AB = M?.D && !M.D.error && A ? apBuckets(M) : null;
+  if (!cfg.exp) return "";
+  const price = v => isNum(v) ? NF4.format(v) + " zł/kWh" : "—", pctS = (x, y) => y > 0 ? Math.round(x / y * 100) + "%" : "0%";
+  const tile = (hist, color, label, val, sub, vc, cls = "") => `<div class="pw-tile hist${cls}" data-hist="${hist}" tabindex="0" role="button" title="Kliknij: historia"><small><i style="background:${color}"></i>${label}</small><b style="color:${vc || color}">${val}</b><em>${sub}</em></div>`;
+  const when = x => x ? `${isDay ? "" : dayShort(new Date(x.t)) + " "}${pad(new Date(x.t).getHours())}:${pad(new Date(x.t).getMinutes())}–${pad(new Date(x.t + 9e5).getHours())}:${pad(new Date(x.t + 9e5).getMinutes())}` : "";
+  const sold = A ? A.okK + A.badK : 0;
+  const tiles = !A ? `<div class="nohist">Do policzenia progu potrzebne są liczniki falownika (import, eksport) i zużycie domu.</div>` : [
+    tile("sell", TONE.green, "Realny zarobek automatyki", zl(A.gain, true), "po odjęciu zakupu, dystrybucji i strat baterii", A.gain < 0 ? TONE.red : TONE.green),
+    tile("rce", CYAN, "Próg opłacalności sprzedaży", price(A.thr), `(kWh w magazynie ${NF4.format(A.sc)} + dystr. ${NF4.format(M.D.ap.dist)}) ÷ ${Math.round(M.D.ap.eff * 100)}%`),
+    tile("rce", TONE.green, "kWh sprzedane powyżej progu", kwh(A.okK), `za ${zl(A.okV)} · zysk ${zl(A.okG, true)} · ${pctS(A.okK, sold)}`),
+    tile("rce", TONE.red, "kWh sprzedane poniżej progu", kwh(A.badK), `za ${zl(A.badV)} · strata ${zl(A.badG, true)} · ${pctS(A.badK, sold)}`, null, A.badK > 0.001 ? " pw-bad" : ""),
+    tile("rce", TONE.red, "Najgorsza sprzedaż", A.worst ? price(A.worst.sell) : "—", A.worst ? `${when(A.worst)} · ${kwh(A.worst.kwh)} · ${zl(A.worst.g, true)}` : "brak sprzedaży", A.worst && A.worst.g >= 0 ? TONE.green : TONE.red),
+    tile("rce", CYAN, "Najlepsza sprzedaż", A.best ? price(A.best.sell) : "—", A.best ? `${when(A.best)} · ${kwh(A.best.kwh)} · ${zl(A.best.g, true)}` : "brak sprzedaży"),
+    tile("cost", "#8b7cff", "Średni koszt kWh w magazynie", price(A.sc), isNum(T.batKwh) && T.batKwh > 0 ? `z ${kwh(T.batKwh)} kupionych do baterii` : "brak zakupu do baterii – wg średniej ceny kupna", "#b7aaff"),
+    tile("pw_bat", TONE.orange, "Straty baterii (szac.)", zl(A.loss), `${Math.round((1 - M.D.ap.eff) * 100)}% energii z magazynu · sprawność ${Math.round(M.D.ap.eff * 100)}%`),
+  ].join("");
+  const bar = A && sold > 0 ? `<div class="ap-bar"><i style="width:${A.okK / sold * 100}%;background:${TONE.green}"></i><i style="width:${A.badK / sold * 100}%;background:${TONE.red}"></i></div><div class="ap-leg"><span>sprzedane powyżej progu ${pctS(A.okK, sold)}</span><span>poniżej progu ${pctS(A.badK, sold)}</span></div>` : "";
+  const strip = AB && M.r.mode === "day" ? `<div class="ap-strip">${AB.list.map(x => { const c = !x.live ? "" : x.badK > 0.001 ? TONE.red : x.okK > 0.001 ? TONE.green : x.bk > 0.001 ? "#8b7cff" : ""; return `<div style="${c ? `background:${c};color:#06111b` : ""}${!x.live ? ";opacity:.35" : ""}">${x.lab}</div>`; }).join("")}</div>` : "";
+  return `<div class="pw-sec">Zarobek z automatyki</div>
+  <div class="pw-legend ap-legend"><span><i style="background:#8b7cff"></i>Kupno do magazynu</span><span><i style="background:${TONE.green}"></i>Sprzedaż powyżej progu</span><span><i style="background:${TONE.red}"></i>Sprzedaż poniżej progu</span><span><i style="background:${CYAN}"></i>${isDay || M?.r.mode === "week" ? "Cena RCE" : "Śr. cena sprzedaży"}</span><span><i style="background:${PINK}"></i>${isDay || M?.r.mode === "week" ? "Cena kupna G12" : "Śr. cena zakupu do magazynu"}</span><span><i class="dash"></i>Próg opłacalności</span></div>
+  <div class="pw-plot ap-plot">${AB ? apSvg(M, AB) : `<div class="nohist">${M?.D ? "Brak danych o sprzedaży w tym okresie" : "Ładowanie…"}</div>`}<div class="fc-tip ap-tip" hidden></div></div>
+  ${strip}<div class="pw-tiles" style="margin-top:10px">${tiles}</div>${bar}`;
+}
+const AP_CSS = `
+.ap-legend span{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--mut2);padding:3px 8px}.ap-legend i{width:14px;height:6px;border-radius:2px}.ap-legend i.dash{background:repeating-linear-gradient(90deg,${CYAN} 0 4px,transparent 4px 7px)}
+.ap-plot{min-height:200px}.ap-hl{stroke:#c9d7e2;opacity:.4}.ap-hit{cursor:pointer}
+.ap-strip{display:flex;gap:3px;margin-top:8px;height:26px}.ap-strip div{flex:1;border-radius:4px;background:#14293a;color:var(--mut);font-size:10.5px;display:flex;align-items:center;justify-content:center;font-weight:600;overflow:hidden}
+.ap-bar{height:10px;border-radius:6px;background:#14293a;overflow:hidden;display:flex;margin:10px 0 4px}.ap-bar i{display:block;height:100%}.ap-leg{display:flex;justify-content:space-between;font-size:12px;color:var(--mut)}
+.pw-tile.pw-bad{border-color:${TONE.red}}
 `;
 /* ---------- history modal: click a tile -> history + already published future (v1.5.0) ---------- */
 const g12Zone = d => { const mo = d.getMonth() + 1, h = d.getHours(), summer = mo >= 4 && mo <= 9; return h >= 22 || h < 6 || (summer ? h >= 15 && h < 17 : h >= 13 && h < 15) ? "s2" : "s1"; };
@@ -1211,7 +1339,7 @@ class PGEPanel extends PGEBase {
     }).catch(e => { st.busy = false; st.D = { error: e?.message || String(e) }; st.key = k; st.at = Date.now(); this._draw(); });
   }
   _pwSet(range) { const st = this._pwState(); if (!range || !(range.start < range.end)) return; st.range = range; st.D = null; st.key = ""; this._draw(); }
-  _pwModel(m) { const st = this._pwState(); return st.D ? pwModel(st, st.D, m) : null; }
+  _pwModel(m) { const st = this._pwState(); st.eff = this._hass?.states?.[this._ids?.invoice_forecast]?.attributes?.power?.efficiency; return st.D ? pwModel(st, st.D, m) : null; }
   _bindPower(m, M) {
     const card = this.shadowRoot.querySelector(".pw"); if (!card) return;
     const st = this._pwState(), cfg = pwConfig(this._hass, this._ids), today = () => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth(), t.getDate()); };
@@ -1254,8 +1382,32 @@ class PGEPanel extends PGEBase {
       ov.onclick = () => { if (cur) this._pwSet(st.range.mode === "year" ? makeRange("month", cur.d) : makeRange("day", cur.d)); };
       ov.style.cursor = "pointer";
     }
+    this._bindAp(M, cfg);
     function r2(t) { const d = new Date(t); return `${dayShort(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
     ov.onmouseleave = () => { tip.hidden = true; hl.style.display = "none"; if (dots) dots.innerHTML = ""; };
+  }
+  _bindAp(M, cfg) {
+    const card = this.shadowRoot.querySelector(".pw"), svg = card?.querySelector(".ap-svg"), tip = card?.querySelector(".ap-tip");
+    if (!svg || !M?.tot?.ap) return;
+    const AB = apBuckets(M); if (!AB) return;
+    const hl = svg.querySelector(".ap-hl"), st = this._pwState(), price = v => isNum(v) ? NF4.format(v) + " zł/kWh" : "—";
+    const row = (c, l, v) => `<div class="r"><span><i style="background:${c}"></i>${l}</span><b>${v}</b></div>`;
+    svg.querySelectorAll(".ap-hit").forEach(el => {
+      const x = AB.list[Number(el.dataset.i)];
+      el.onmouseenter = () => {
+        const cx = Number(el.getAttribute("x")) + Number(el.getAttribute("width")) / 2;
+        hl.style.display = ""; hl.setAttribute("x1", cx); hl.setAttribute("x2", cx);
+        const act = [];
+        if (x.okK > 0.001) act.push(`<div class="r act" style="color:${TONE.green}"><span>Sprzedaż powyżej progu</span><b>${kwh(x.okK)} · ${zl(x.okG, true)}</b></div>`);
+        if (x.badK > 0.001) act.push(`<div class="r act" style="color:${TONE.red}"><span>Sprzedaż poniżej progu</span><b>${kwh(x.badK)} · ${zl(x.badG, true)}</b></div>`);
+        if (x.bk > 0.001) act.push(`<div class="r act" style="color:#b7aaff"><span>Kupno do magazynu</span><b>${kwh(x.bk)} za ${zl(x.bc)}</b></div>`);
+        if (!act.length) act.push(`<div class="r"><span>${x.live ? "Automat nic nie sprzedawał ani nie kupował do magazynu" : "Jeszcze nie było"}</span><b>—</b></div>`);
+        tip.innerHTML = `<div class="tt">${esc(x.tip)}${st.range.mode !== "day" && x.live ? " · kliknij = szczegóły" : ""}</div>${act.join("")}<hr>${x.sk > 0 ? row(CYAN, "Sprzedano po (śr.)", price(x.val / x.sk)) : ""}${x.bk > 0 ? row(PINK, "Kupiono do magazynu po (śr.)", price(x.bc / x.bk)) : ""}${row(CYAN, "Próg opłacalności", price(AB.thr))}${x.sk > 0 ? row("#9db2c3", "Wynik", zl(x.okG + x.badG, true)) : ""}`;
+        tip.hidden = false; tip.style.left = `clamp(130px, ${cx / 10}%, calc(100% - 130px))`;
+      };
+      if (st.range.mode !== "day" && x.live) el.onclick = () => this._pwSet(st.range.mode === "year" ? makeRange("month", x.d) : makeRange("day", x.d));
+    });
+    svg.onmouseleave = () => { tip.hidden = true; hl.style.display = "none"; };
   }
   _setRange(r) {
     if (!r || !(r.start < r.end)) return;
@@ -1333,7 +1485,7 @@ class PGEPanel extends PGEBase {
     const row = (label, r, i) => `<tr class="hist" data-hist="bal" data-pi="${i}" tabindex="0"><td>${esc(label)}</td><td>${kwh(r.imp)}</td><td>${kwh(r.exp)}</td><td class="${isNum(r.bal) && r.bal < 0 ? "t-red" : "t-green"}">${kwh(r.bal, true)}</td></tr>`;
     const frow = (label, r, i) => `<tr class="hist" data-hist="profit" data-pi="${i}" tabindex="0"><td>${esc(label)}</td><td>${zl(r.cost)}</td><td>${zl(r.sell)}</td><td class="${isNum(r.saldo) && r.saldo < 0 ? "t-red" : "t-green"}">${zl(r.saldo, true)}</td></tr>`;
 
-    this.shadowRoot.innerHTML = `<style>${CSS}${PW_CSS}</style><main class="pf">
+    this.shadowRoot.innerHTML = `<style>${CSS}${PW_CSS}${AP_CSS}</style><main class="pf">
 <div class="pf-grid"><div class="main">
   <header class="pf-head"><div class="pf-brand">${logo(c, "lg")}<div><h1>PGE Net-Billing</h1><div class="pf-sub">PGE Obrót · Dystrybucja · RCE · ${esc(tariff?.name || "G12")}</div></div></div>
     <div class="pf-date"><div class="pf-date-row">${icon("calendar-month", "blue")}<span class="lbl">${esc(monthName(m.sel))}</span><button class="nav" data-d="-1" ${this._offset <= -24 ? "disabled" : ""} aria-label="Poprzedni miesiąc"><ha-icon icon="mdi:chevron-left"></ha-icon></button><button class="nav" data-d="1" ${this._offset >= 0 ? "disabled" : ""} aria-label="Następny miesiąc"><ha-icon icon="mdi:chevron-right"></ha-icon></button></div>

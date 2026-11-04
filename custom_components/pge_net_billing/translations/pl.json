@@ -35,7 +35,8 @@
           "pv_total_entity": "Falownik – produkcja PV łącznie (kWh) – opcjonalnie",
           "battery_charge_total_entity": "Falownik – ładowanie baterii łącznie (kWh) – opcjonalnie",
           "battery_discharge_total_entity": "Falownik – rozładowanie baterii łącznie (kWh) – opcjonalnie",
-          "load_total_entity": "Falownik – zużycie domu (kWh, łącznie lub dzisiaj) – opcjonalnie"
+          "load_total_entity": "Falownik – zużycie domu (kWh, łącznie lub dzisiaj) – opcjonalnie",
+          "battery_efficiency": "Sprawność baterii (0.90 = 90%, do progu opłacalności)"
         }
       }
     }
@@ -75,7 +76,8 @@
           "pv_total_entity": "Falownik – produkcja PV łącznie (kWh) – opcjonalnie",
           "battery_charge_total_entity": "Falownik – ładowanie baterii łącznie (kWh) – opcjonalnie",
           "battery_discharge_total_entity": "Falownik – rozładowanie baterii łącznie (kWh) – opcjonalnie",
-          "load_total_entity": "Falownik – zużycie domu (kWh, łącznie lub dzisiaj) – opcjonalnie"
+          "load_total_entity": "Falownik – zużycie domu (kWh, łącznie lub dzisiaj) – opcjonalnie",
+          "battery_efficiency": "Sprawność baterii (0.90 = 90%, do progu opłacalności)"
         }
       }
     }
