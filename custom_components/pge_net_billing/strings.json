@@ -31,7 +31,11 @@
           "battery_invert": "Odwróć znak baterii (gdy + = rozładowanie)",
           "grid_invert": "Odwróć znak sieci (gdy + = oddawanie)",
           "grid_import_total_entity": "Falownik – pobór z sieci łącznie (kWh) – opcjonalnie",
-          "grid_export_total_entity": "Falownik – oddanie do sieci łącznie (kWh) – opcjonalnie"
+          "grid_export_total_entity": "Falownik – oddanie do sieci łącznie (kWh) – opcjonalnie",
+          "pv_total_entity": "Falownik – produkcja PV łącznie (kWh) – opcjonalnie",
+          "battery_charge_total_entity": "Falownik – ładowanie baterii łącznie (kWh) – opcjonalnie",
+          "battery_discharge_total_entity": "Falownik – rozładowanie baterii łącznie (kWh) – opcjonalnie",
+          "load_total_entity": "Falownik – zużycie domu (kWh, łącznie lub dzisiaj) – opcjonalnie"
         }
       }
     }
@@ -67,7 +71,11 @@
           "battery_invert": "Odwróć znak baterii (gdy + = rozładowanie)",
           "grid_invert": "Odwróć znak sieci (gdy + = oddawanie)",
           "grid_import_total_entity": "Falownik – pobór z sieci łącznie (kWh) – opcjonalnie",
-          "grid_export_total_entity": "Falownik – oddanie do sieci łącznie (kWh) – opcjonalnie"
+          "grid_export_total_entity": "Falownik – oddanie do sieci łącznie (kWh) – opcjonalnie",
+          "pv_total_entity": "Falownik – produkcja PV łącznie (kWh) – opcjonalnie",
+          "battery_charge_total_entity": "Falownik – ładowanie baterii łącznie (kWh) – opcjonalnie",
+          "battery_discharge_total_entity": "Falownik – rozładowanie baterii łącznie (kWh) – opcjonalnie",
+          "load_total_entity": "Falownik – zużycie domu (kWh, łącznie lub dzisiaj) – opcjonalnie"
         }
       }
     }

@@ -13,7 +13,11 @@
           "battery_invert": "Invert battery sign",
           "grid_invert": "Invert grid sign",
           "grid_import_total_entity": "Inverter grid import total (kWh, optional)",
-          "grid_export_total_entity": "Inverter grid export total (kWh, optional)"
+          "grid_export_total_entity": "Inverter grid export total (kWh, optional)",
+          "pv_total_entity": "Inverter PV production total (kWh, optional)",
+          "battery_charge_total_entity": "Inverter battery charge total (kWh, optional)",
+          "battery_discharge_total_entity": "Inverter battery discharge total (kWh, optional)",
+          "load_total_entity": "Inverter house load energy (kWh, optional)"
         }
       }
     }
@@ -30,7 +34,11 @@
           "battery_invert": "Invert battery sign",
           "grid_invert": "Invert grid sign",
           "grid_import_total_entity": "Inverter grid import total (kWh, optional)",
-          "grid_export_total_entity": "Inverter grid export total (kWh, optional)"
+          "grid_export_total_entity": "Inverter grid export total (kWh, optional)",
+          "pv_total_entity": "Inverter PV production total (kWh, optional)",
+          "battery_charge_total_entity": "Inverter battery charge total (kWh, optional)",
+          "battery_discharge_total_entity": "Inverter battery discharge total (kWh, optional)",
+          "load_total_entity": "Inverter house load energy (kWh, optional)"
         }
       }
     }

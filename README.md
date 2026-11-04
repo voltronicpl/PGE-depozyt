@@ -1,4 +1,4 @@
-# PGE Net-Billing v1.7.1
+# PGE Net-Billing v1.7.2
 
 Nieoficjalna integracja Home Assistant dla prognoz net-billingu PGE, G12 i RCE.
 
@@ -16,6 +16,11 @@ Po restarcie HA wybierz **Edytuj dashboard → Dodaj kartę → PGE Net-Billing 
 Integracja automatycznie ładuje frontend. Nie trzeba rejestrować zasobu ani wpisywać YAML.
 
 Jeżeli automatyczne rozpoznanie encji nie działa, w `entities:` można podać ich identyfikatory, np. `invoice_forecast`, `deposit_estimate`, `import_s1`, `import_s2`, `export_kwh`.
+
+## Nowe w v1.7.2 – energia prosto z liczników falownika
+- Nowe opcje: „Falownik – produkcja PV łącznie”, „ładowanie baterii łącznie”, „rozładowanie baterii łącznie”, „zużycie domu” (kWh). Gdy są wskazane, kafle i punkty Miesiąc / Rok biorą energię z przyrostów tych liczników zamiast liczyć moc × czas. Działa z licznikami „łącznie” i dziennymi (zerowanymi o północy).
+- Poprawka: odczyt licznika dokładnie na granicy kwadransu nie wypadał już z wyliczeń kupna / sprzedaży.
+- Linie mocy (kW) na wykresie dalej z encji mocy.
 
 ## Nowe w v1.7.1
 - Strzałki miesiąca w nagłówku przestawiają cały panel: kafle, tabele, „Przepływ energii” **i „Moc i bateria”** – oba wykresy przechodzą na widok Miesiąc z wybranego miesiąca.

@@ -1,7 +1,7 @@
-/* PGE Net-Billing v1.7.1 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
+/* PGE Net-Billing v1.7.2 – Home Assistant panel + Lovelace cards (layout matched to reference dashboard) */
 (() => { // own scope: never clashes with another copy of this script loaded as a classic <script>
 const DOMAIN = "pge_net_billing";
-const VERSION = "1.7.1";
+const VERSION = "1.7.2";
 const PANEL_PATH = "/pge-net-billing";
 const KEYS = ["invoice_forecast", "deposit_estimate", "import_s1", "import_s2", "export_kwh", "energy_cost", "export_value", "rce_current"];
 // Fallback for installs without translation_key (older backend): friendly-name suffixes
@@ -600,7 +600,31 @@ const PW = {
   load: { label: "Pobór domu", color: TONE.red, attr: "load_power", kind: "power" },
   imp: { label: "Import (licznik)", color: TONE.orange, attr: "grid_import_total", kind: "energy" },
   exp: { label: "Eksport (licznik)", color: TONE.orange, attr: "grid_export_total", kind: "energy" },
+  // v1.7.2: inverter energy counters (lifetime or daily-reset) – preferred over power × time
+  pvE: { label: "Produkcja PV (licznik)", color: TONE.green, attr: "pv_total", kind: "energy" },
+  chE: { label: "Ładowanie (licznik)", color: "#8b7cff", attr: "battery_charge_total", kind: "energy" },
+  disE: { label: "Rozładowanie (licznik)", color: "#8b7cff", attr: "battery_discharge_total", kind: "energy" },
+  loadE: { label: "Zużycie domu (licznik)", color: TONE.red, attr: "load_total", kind: "energy" },
 };
+// energy from a counter: sum of increases; a drop = reset (daily counter) -> the new value is the energy since the reset
+function pwDelta(s, a, b) {
+  if (!s?.length) return null;
+  const v0 = pwAt(s, a); let prev = isNum(v0) ? v0 : null, sum = 0, any = isNum(v0);
+  for (const [t, v] of s) { if (t <= a) continue; if (t > b) break; if (prev !== null) sum += v >= prev ? v - prev : v; prev = v; any = true; }
+  return any ? sum : null;
+}
+// long ranges: hourly statistics "change" of the counters (HA handles resets of total_increasing; for plain "total" a negative change = reset -> use the state)
+async function pwChange(hass, cfg, start, end) {
+  const keys = Object.keys(cfg);
+  if (!keys.length || !hass?.callWS) return {};
+  const ck = "chg|" + keys.map(k => cfg[k].id).join(",") + "|" + +start + "|" + +end, hit = pwCache.get(ck);
+  if (hit && Date.now() - hit.t < 300000) return hit.p;
+  const p = hass.callWS({ type: "recorder/statistics_during_period", start_time: new Date(start).toISOString(), end_time: new Date(Math.min(+end, Date.now())).toISOString(), statistic_ids: keys.map(k => cfg[k].id), period: "hour", types: ["change", "state"] })
+    .then(res => { const out = {}; for (const k of keys) { const f = pwFactor(k, hass, cfg[k].id); out[k] = (res?.[cfg[k].id] || []).map(x => { const c = Number(x.change), s = Number(x.state); return { t: typeof x.start === "number" ? x.start : Date.parse(x.start), e: (isNum(c) && c >= 0 ? c : isNum(s) && s >= 0 ? s : 0) * f }; }).filter(x => isNum(x.t)); } return out; })
+    .catch(e => { console.warn("PGE Net-Billing: counter statistics unavailable", e); pwCache.delete(ck); return { error: e?.message || String(e) }; });
+  pwCache.set(ck, { t: Date.now(), p });
+  return p;
+}
 const PW_LINES = ["bat", "grid", "pv", "load"];
 const PW_LEGEND = [["buy", "Cena kupna (G12)", PINK], ["sell", "Cena sprzedaży (RCE)", CYAN], ["soc", "SOC magazynu", TONE.blue], ["pv", "Produkcja", TONE.green], ["bat", "Bateria", "#8b7cff"], ["grid", "Sieć / import–eksport", TONE.orange], ["load", "Pobór domu", TONE.red]];
 const PW_MODES = [["week", "Tydzień"], ["month", "Miesiąc"], ["year", "Rok"]];
@@ -678,24 +702,25 @@ function pwEnergy(s, a, b) {
 async function pwFetch(hass, cfg, r, mul) {
   const a = +r.start, b = +r.end, end = Math.min(b, Date.now()), long = b - a > 8 * 864e5;
   const pick = ks => Object.fromEntries(ks.filter(k => cfg[k]).map(k => [k, cfg[k]]));
-  const pk = pick(["pv", "bat", "grid", "load", "soc"]), ck = pick(["imp", "exp"]);
+  const pk = pick(["pv", "bat", "grid", "load", "soc"]), ck = pick(["imp", "exp"]), ek = pick(["pvE", "chE", "disE", "loadE"]);
   const q = `start=${isoDate(r.start)}&end=${isoDate(addDays(r.end, -1))}&agg=raw`;
-  const [raw, cnt, st, rce] = await Promise.all([
+  const [raw, cnt, st, rce, en] = await Promise.all([
     long ? {} : pwLoad(hass, pk, a, b),
     pwLoad(hass, ck, a, b),
     long ? pwHourly(hass, pk, a, b) : {},
     hass.callApi ? hass.callApi("GET", `pge_net_billing/rce?${q}`).catch(() => ({ rows: [] })) : { rows: [] },
+    long ? pwChange(hass, ek, a, b) : pwLoad(hass, ek, a, b),
   ]);
-  for (const x of [raw, cnt, st]) if (x?.error) return { error: x.error };
+  for (const x of [raw, cnt, st, en]) if (x?.error) return { error: x.error };
   const rmap = new Map((rce?.rows || []).map(x => [Date.parse(x[0]), Number(x[1]) * mul]));
-  return { long, raw, cnt, st, rmap, a, b, end };
+  return { long, raw, cnt, st, rmap, a, b, end, en };
 }
 // 15-min slots from the inverter counters: what was really bought / sold and at which price
 function pwSlots(D, tz) {
   const out = [], ci = D.cnt.imp, ce = D.cnt.exp;
   for (let t = D.a; t < D.b; t += 9e5) {
     const z = g12Zone(new Date(t)), t1 = Math.min(t + 9e5, D.end), past = t < D.end;
-    const d = s => { if (!past || !s?.length) return null; const x0 = pwAt(s, t), x1 = pwAt(s, t1); return isNum(x0) && isNum(x1) ? Math.max(0, x1 - x0) : null; };
+    const d = s => { if (!past || !s?.length) return null; const v = pwDelta(s, t, t1); return isNum(v) ? Math.max(0, v) : null; };
     out.push({ t, buy: isNum(tz[z]) ? Number(tz[z]) : null, sell: D.rmap.has(t) ? Math.max(0, D.rmap.get(t)) : null, rceRaw: D.rmap.get(t), z, di: d(ci), de: d(ce), past });
   }
   return out;
@@ -719,6 +744,13 @@ function pwAgg(D, slots, a, b, tz) {
     for (const x of S.load || []) if (x.t >= a && x.t < end) { add("load", Math.max(0, x.mean)); mx("ldMax", x.max); }
     for (const x of S.soc || []) if (x.t >= a && x.t < end) { mn("sMin", x.min, x.t, "tMin"); mx("sMax", x.max, x.t, "tMax"); }
     if (r.ch === null && S.bat?.length) r.ch = 0; if (r.dis === null && S.bat?.length) r.dis = 0;
+  }
+  // inverter energy counters win over power × time (exact values from the inverter)
+  const E = D.en || {}, src = r.src = {};
+  for (const [k, f] of [["pvE", "pv"], ["chE", "ch"], ["disE", "dis"], ["loadE", "load"]]) {
+    if (!E[k]) continue;
+    const v = D.long ? E[k].filter(x => x.t >= a && x.t < end).reduce((s, x) => s + x.e, 0) : pwDelta(E[k], a, end);
+    if (isNum(v)) { r[f] = v; src[f] = 1; }
   }
   for (const s of slots) {
     if (s.t < a || s.t >= b || !s.past) continue;
@@ -818,13 +850,13 @@ function pwCard(st, cfg, m, M, hass) {
   const tile = (key, hist, color, label, val, sub, vc) => `<div class="pw-tile hist" data-hist="${hist}" tabindex="0" role="button" title="Kliknij: historia"><small><i style="background:${color}"></i>${label}</small><b style="color:${vc || color}">${val}</b><em>${sub}</em></div>`;
   const miss = "brak encji – ustaw w opcjach";
   const e1 = [
-    tile("pv", "pw_pv", PW.pv.color, "Produkcja PV", cfg.pv ? kwh(T.pv) : "—", cfg.pv ? `szczyt ${kw(T.pvMax)}` : miss),
-    tile("ch", "pw_bat", PW.bat.color, "Ładowanie baterii", cfg.bat ? kwh(T.ch) : "—", cfg.bat ? `maks. moc ${kw(T.chMax)}` : miss),
-    tile("dis", "pw_bat", PW.bat.color, "Rozładowanie baterii", cfg.bat ? kwh(T.dis) : "—", cfg.bat ? `maks. moc ${kw(T.disMax)}` : miss, "#b7aaff"),
+    tile("pv", "pw_pv", PW.pv.color, "Produkcja PV", cfg.pv || cfg.pvE ? kwh(T.pv) : "—", cfg.pv || cfg.pvE ? (cfg.pv ? `szczyt ${kw(T.pvMax)}` : "") + (T.src?.pv ? (cfg.pv ? " · " : "") + "licznik falownika" : "") : miss),
+    tile("ch", "pw_bat", PW.bat.color, "Ładowanie baterii", cfg.bat || cfg.chE ? kwh(T.ch) : "—", cfg.bat || cfg.chE ? (cfg.bat ? `maks. moc ${kw(T.chMax)}` : "") + (T.src?.ch ? (cfg.bat ? " · " : "") + "licznik" : "") : miss),
+    tile("dis", "pw_bat", PW.bat.color, "Rozładowanie baterii", cfg.bat || cfg.disE ? kwh(T.dis) : "—", cfg.bat || cfg.disE ? (cfg.bat ? `maks. moc ${kw(T.disMax)}` : "") + (T.src?.dis ? (cfg.bat ? " · " : "") + "licznik" : "") : miss, "#b7aaff"),
     tile("soc", "pw_soc", TONE.blue, "SOC magazynu min / maks", cfg.soc ? `${pct(T.sMin)} <span class="pw-arr">→</span> ${pct(T.sMax)}` : "—", cfg.soc ? `${isNum(T.tMin) ? "min " + at(T.tMin) + " · maks " + at(T.tMax) : ""}${live && isNum(nowSoc) ? " · teraz " + pct(nowSoc) : ""}` : miss),
     tile("imp", cfg.grid ? "pw_grid" : "cost", PW.grid.color, "Import z sieci", cfg.imp ? kwh(T.imp) : "—", cfg.imp ? "licznik falownika" : miss),
     tile("exp", cfg.grid ? "pw_grid" : "sell", PW.grid.color, "Eksport do sieci", cfg.exp ? kwh(T.exp) : "—", cfg.exp ? "licznik falownika" : miss, "#ffd27a"),
-    tile("load", "pw_load", PW.load.color, "Pobór domu", cfg.load ? kwh(T.load) : "—", cfg.load ? `szczyt ${kw(T.ldMax)}${live && isDay ? " · teraz " + kw(liveVal("load")) : ""}` : miss),
+    tile("load", "pw_load", PW.load.color, "Pobór domu", cfg.load || cfg.loadE ? kwh(T.load) : "—", cfg.load || cfg.loadE ? `${T.src?.load ? "licznik · " : ""}szczyt ${kw(T.ldMax)}${live && isDay ? " · teraz " + kw(liveVal("load")) : ""}` : miss),
   ].join("");
   const b = T.best;
   const e2 = [
@@ -844,7 +876,7 @@ function pwCard(st, cfg, m, M, hass) {
   <div class="pw-plot">${body}<div class="fc-tip pw-tip" hidden></div></div>
   <div class="pw-sec">Energia</div><div class="pw-tiles">${e1}</div>
   <div class="pw-sec">Pieniądze</div><div class="pw-tiles">${e2}</div>
-  <div class="pw-note">${D?.long ? "Punkt = suma energii w " + (r.mode === "year" ? "miesiącu" : "dniu") + " (moc z godzinowych statystyk HA × 1 h; SOC = najniższy i najwyższy odczyt). " : "Surowe odczyty z historii HA (bez uśredniania; przy wielu odczytach na piksel rysowany jest najniższy i najwyższy). "}Kupno / sprzedaż = przyrost liczników falownika w każdym kwadransie × cena G12 brutto / RCE brutto z tego kwadransu. Gruba neonowa linia = wtedy faktycznie kupowałeś (róż) albo sprzedawałeś (turkus). Ceny G12 wg obecnych stawek z konfiguracji.</div>
+  <div class="pw-note">${D?.long ? "Punkt = suma energii w " + (r.mode === "year" ? "miesiącu" : "dniu") + " (z liczników falownika, a gdzie ich brak – moc z godzinowych statystyk HA × 1 h; SOC = najniższy i najwyższy odczyt). " : "Surowe odczyty z historii HA (bez uśredniania; przy wielu odczytach na piksel rysowany jest najniższy i najwyższy). "}Kupno / sprzedaż = przyrost liczników falownika w każdym kwadransie × cena G12 brutto / RCE brutto z tego kwadransu. Gruba neonowa linia = wtedy faktycznie kupowałeś (róż) albo sprzedawałeś (turkus). Ceny G12 wg obecnych stawek z konfiguracji.</div>
 </section>`;
 }
 const PW_CSS = `
